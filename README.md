@@ -24,6 +24,29 @@
    ```
 4. 把视频放入 `watch/`，字幕会输出到 `output/`
 
+### 使用 GHCR 镜像
+
+本项目已配置 GitHub Actions 自动构建 GHCR 镜像：`ghcr.io/<owner>/<repo>`。
+
+- `latest`：主分支构建
+- `vX.Y.Z`：发布 tag 构建
+- `sha-<commit>`：提交快照
+
+示例（替换为你的仓库地址）：
+
+```bash
+# 拉取
+docker pull ghcr.io/<owner>/<repo>:latest
+
+# 运行（示例）
+docker run -d \
+  --name autosub \
+  --env-file .env \
+  -v $(pwd)/watch:/watch \
+  -v $(pwd)/output:/output \
+  ghcr.io/<owner>/<repo>:latest
+```
+
 ## 配置说明（环境变量）
 
 ### Watch/Output
