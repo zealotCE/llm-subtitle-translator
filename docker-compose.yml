@@ -1,0 +1,12 @@
+version: "3.8"
+
+services:
+  watcher:
+    build: ./watcher
+    container_name: auto-subtitle-watcher
+    env_file:
+      - .env
+    volumes:
+      - ./watch:/watch
+      - ./output:/output
+    restart: unless-stopped
