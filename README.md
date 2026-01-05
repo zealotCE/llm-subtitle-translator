@@ -1,4 +1,4 @@
-# 本地自动字幕工厂（DashScope Paraformer + OSS）
+# llm-subtitle-translator
 
 ## 功能概览
 - 监听 `watch/` 目录：新文件写入完成或移动入目录后自动处理
