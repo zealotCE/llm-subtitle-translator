@@ -58,6 +58,8 @@ docker run -d \
 - `SCAN_INTERVAL`：默认 `300`
 - `LOCK_TTL`：默认 `7200`
 - `OUTPUT_TO_SOURCE_DIR`：是否将输出字幕/标记文件写回视频所在目录（默认 `true`）
+- `LOG_DIR`：日志文件输出目录（为空则仅输出到 stdout）
+- `LOG_FILE_NAME`：日志文件名（默认 `worker.log`）
 
 ### DashScope 百炼
 - `DASHSCOPE_API_KEY`：必填
@@ -154,6 +156,8 @@ docker run -d \
 - `ASR_MIN_DURATION_SECONDS`：二次切片时每行最短时长（默认 `1.0` 秒）
 - `ASR_MIN_CHARS`：二次切片时每行最少字符数（默认 `6`）
 - `ASR_MERGE_GAP_MS`：短句合并允许的最大时间间隔（默认 `400` 毫秒）
+- `NFO_ENABLED`：是否读取同名 NFO 作为作品信息线索（默认 `true`）
+- `NFO_SAME_NAME_ONLY`：只读取与媒体同名的 NFO（默认 `true`）
 - `GROUPING_ENABLED`：是否启用语义行分组（默认 `true`）
 - `CONTEXT_AWARE_ENABLED`：是否启用带上下文逐行翻译（默认 `true`）
 

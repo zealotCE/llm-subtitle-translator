@@ -9,8 +9,9 @@ import subprocess
 import threading
 import time
 import uuid
+import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import timedelta
+from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from dataclasses import dataclass
 from typing import Callable, Dict, List, NamedTuple, Optional
@@ -150,6 +151,11 @@ ASR_MIN_CHARS = int(os.getenv("ASR_MIN_CHARS", "6"))
 ASR_MERGE_GAP_MS = int(os.getenv("ASR_MERGE_GAP_MS", "400"))
 GROUPING_ENABLED = os.getenv("GROUPING_ENABLED", "true").lower() == "true"
 CONTEXT_AWARE_ENABLED = os.getenv("CONTEXT_AWARE_ENABLED", "true").lower() == "true"
+NFO_ENABLED = os.getenv("NFO_ENABLED", "true").lower() == "true"
+NFO_SAME_NAME_ONLY = os.getenv("NFO_SAME_NAME_ONLY", "true").lower() == "true"
+LOG_DIR = os.getenv("LOG_DIR", "").strip()
+LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "worker.log").strip()
+LOG_LOCK = threading.Lock()
 
 CACHE_DIR = os.path.join(OUT_DIR, "cache")
 CACHE_DB = os.path.join(CACHE_DIR, "translate_cache.db")
@@ -276,6 +282,11 @@ class WorkQuery:
     guessed_type: Optional[str]
     subtitle_snippets: Dict[str, List[str]]
     language_priority: List[str]
+    nfo_path: Optional[str]
+    nfo_title: Optional[str]
+    nfo_original_title: Optional[str]
+    nfo_episode_title: Optional[str]
+    external_ids: Dict[str, str]
 
 
 @dataclass
@@ -377,6 +388,110 @@ def guess_work_info_from_path(path):
     if title or season or episode:
         return WorkInfo(title=title, season=season, episode=episode, confidence=min(confidence, 0.5), source="path_only")
     return WorkInfo(title=None, season=None, episode=None, confidence=0.0, source="none")
+
+
+def _find_nfo_file(video_path):
+    if not NFO_ENABLED:
+        return None
+    base = os.path.splitext(video_path)[0]
+    same = f"{base}.nfo"
+    if os.path.exists(same):
+        return same
+    if NFO_SAME_NAME_ONLY:
+        return None
+    folder = os.path.dirname(video_path) or "."
+    for name in ("tvshow.nfo", "movie.nfo"):
+        path = os.path.join(folder, name)
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def _nfo_text(root, tag):
+    value = root.findtext(tag)
+    if not value:
+        value = root.findtext(f".//{tag}")
+    if not value:
+        return None
+    value = str(value).strip()
+    return value or None
+
+
+def _parse_nfo_file(path):
+    try:
+        tree = ET.parse(path)
+        root = tree.getroot()
+    except Exception:  # noqa: BLE001
+        return {}
+
+    root_tag = (root.tag or "").lower()
+    info = {"type": None, "external_ids": {}}
+
+    title = _nfo_text(root, "title")
+    original_title = _nfo_text(root, "originaltitle")
+    show_title = _nfo_text(root, "showtitle")
+    episode_title = _nfo_text(root, "title") if root_tag == "episodedetails" else None
+
+    if root_tag == "tvshow":
+        info["type"] = "tv"
+    elif root_tag == "movie":
+        info["type"] = "movie"
+    elif root_tag == "episodedetails":
+        info["type"] = "tv"
+
+    if show_title and root_tag == "episodedetails":
+        info["title"] = show_title
+    else:
+        info["title"] = title or show_title
+    info["original_title"] = original_title
+    info["episode_title"] = episode_title
+
+    year = _nfo_text(root, "year") or _nfo_text(root, "premiered") or _nfo_text(root, "firstaired")
+    if year:
+        match = re.search(r"(19|20)\\d{2}", year)
+        if match:
+            info["year"] = int(match.group(0))
+
+    season = _nfo_text(root, "season")
+    episode = _nfo_text(root, "episode")
+    try:
+        info["season"] = int(season) if season is not None else None
+    except (TypeError, ValueError):
+        info["season"] = None
+    try:
+        info["episode"] = int(episode) if episode is not None else None
+    except (TypeError, ValueError):
+        info["episode"] = None
+
+    for elem in root.findall(".//uniqueid"):
+        key = (elem.get("type") or "").lower()
+        value = (elem.text or "").strip()
+        if not value:
+            continue
+        if key in ("tmdb", "imdb", "tvdb", "douban"):
+            info["external_ids"][key] = value
+        elif key:
+            info["external_ids"][key] = value
+
+    imdb_id = _nfo_text(root, "imdbid")
+    if imdb_id:
+        info["external_ids"].setdefault("imdb", imdb_id)
+    tmdb_id = _nfo_text(root, "tmdbid")
+    if tmdb_id:
+        info["external_ids"].setdefault("tmdb", tmdb_id)
+
+    return info
+
+
+def load_nfo_info(video_path):
+    nfo_path = _find_nfo_file(video_path)
+    if not nfo_path:
+        return None, None
+    info = _parse_nfo_file(nfo_path)
+    if not info:
+        return None, None
+    info["path"] = nfo_path
+    return info, nfo_path
 
 
 def load_glossary_from_yaml(path):
@@ -503,10 +618,27 @@ def detect_work_info(path, sample_lines, llm_client=None):
 
 
 def log(level, message, **kwargs):
+    record = {
+        "ts": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "level": level,
+        "message": message,
+    }
+    if kwargs:
+        record.update(kwargs)
     parts = [f"[{level}]", message]
     if kwargs:
         parts.append(json.dumps(kwargs, ensure_ascii=False))
     print(" ".join(parts), flush=True)
+    if LOG_DIR:
+        try:
+            os.makedirs(LOG_DIR, exist_ok=True)
+            path = os.path.join(LOG_DIR, LOG_FILE_NAME)
+            line = json.dumps(record, ensure_ascii=False)
+            with LOG_LOCK:
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def ensure_dirs():
@@ -515,6 +647,8 @@ def ensure_dirs():
     for path in WATCH_DIR_LIST:
         os.makedirs(path, exist_ok=True)
     os.makedirs(CACHE_DIR, exist_ok=True)
+    if LOG_DIR:
+        os.makedirs(LOG_DIR, exist_ok=True)
     if MOVE_DONE:
         os.makedirs(DONE_DIR, exist_ok=True)
 
@@ -1343,7 +1477,15 @@ def _build_metadata_config():
     )
 
 
-def _build_work_query(video_path, work_info, subtitle_snippets, language_priority, title_aliases):
+def _build_work_query(
+    video_path,
+    work_info,
+    subtitle_snippets,
+    language_priority,
+    title_aliases,
+    nfo_info=None,
+    nfo_path=None,
+):
     raw_file_name = os.path.basename(video_path)
     directory_names = [
         name for name in os.path.normpath(os.path.dirname(video_path)).split(os.sep) if name
@@ -1358,6 +1500,25 @@ def _build_work_query(video_path, work_info, subtitle_snippets, language_priorit
     guessed_type = _guess_type_from_path(video_path)
     if guessed_season is not None or guessed_episode is not None:
         guessed_type = "tv"
+    external_ids = {}
+    nfo_title = None
+    nfo_original_title = None
+    nfo_episode_title = None
+    if nfo_info:
+        nfo_title = nfo_info.get("title")
+        nfo_original_title = nfo_info.get("original_title")
+        nfo_episode_title = nfo_info.get("episode_title")
+        if nfo_title:
+            guessed_title = nfo_title
+        if nfo_info.get("season") is not None:
+            guessed_season = nfo_info.get("season")
+        if nfo_info.get("episode") is not None:
+            guessed_episode = nfo_info.get("episode")
+        if nfo_info.get("year") is not None:
+            guessed_year = nfo_info.get("year")
+        if nfo_info.get("type"):
+            guessed_type = nfo_info.get("type")
+        external_ids = dict(nfo_info.get("external_ids") or {})
     return WorkQuery(
         raw_file_name=raw_file_name,
         directory_names=directory_names,
@@ -1370,6 +1531,11 @@ def _build_work_query(video_path, work_info, subtitle_snippets, language_priorit
         guessed_type=guessed_type,
         subtitle_snippets=subtitle_snippets,
         language_priority=language_priority,
+        nfo_path=nfo_path,
+        nfo_title=nfo_title,
+        nfo_original_title=nfo_original_title,
+        nfo_episode_title=nfo_episode_title,
+        external_ids=external_ids,
     )
 
 
@@ -1727,6 +1893,9 @@ class MetadataService:
             "episode": query.guessed_episode,
             "year": query.guessed_year,
             "type": query.guessed_type,
+            "nfo_title": query.nfo_title,
+            "nfo_original_title": query.nfo_original_title,
+            "external_ids": query.external_ids,
         }
         return hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode("utf-8")).hexdigest()
 
@@ -3343,6 +3512,31 @@ def process_video(video_path):
                     if len(sample_lines) >= 30:
                         break
                 work_info = detect_work_info(video_path, sample_lines, llm_client=llm_client)
+                nfo_info, nfo_path = load_nfo_info(video_path)
+                if nfo_info:
+                    log(
+                        "INFO",
+                        "NFO 命中",
+                        path=video_path,
+                        nfo=nfo_path,
+                        nfo_type=nfo_info.get("type"),
+                        nfo_title=nfo_info.get("title"),
+                    )
+                    title = work_info.title or nfo_info.get("title")
+                    season = work_info.season or (
+                        str(nfo_info.get("season")) if nfo_info.get("season") is not None else None
+                    )
+                    episode = work_info.episode or (
+                        str(nfo_info.get("episode")) if nfo_info.get("episode") is not None else None
+                    )
+                    if title != work_info.title or season != work_info.season or episode != work_info.episode:
+                        work_info = WorkInfo(
+                            title=title,
+                            season=season,
+                            episode=episode,
+                            confidence=max(work_info.confidence, 0.6),
+                            source=f\"{work_info.source}+nfo\",
+                        )
                 raw_glossary = load_glossary_from_yaml(GLOSSARY_PATH)
                 glossary = build_effective_glossary(
                     raw_glossary,
@@ -3362,6 +3556,11 @@ def process_video(video_path):
                             path=video_path,
                         )
                         title_aliases.extend(llm_aliases)
+                    if nfo_info:
+                        for key in ("title", "original_title", "episode_title"):
+                            value = nfo_info.get(key)
+                            if value:
+                                title_aliases.append(value)
                     title_aliases = list(dict.fromkeys([item for item in title_aliases if item]))
                     snippets = {}
                     snippet_lang = SRC_LANG or "und"
@@ -3372,6 +3571,8 @@ def process_video(video_path):
                         subtitle_snippets=snippets,
                         language_priority=metadata_config.language_priority,
                         title_aliases=title_aliases,
+                        nfo_info=nfo_info,
+                        nfo_path=nfo_path,
                     )
                     metadata_service = MetadataService(metadata_config)
                     metadata = metadata_service.resolve_work(query)
