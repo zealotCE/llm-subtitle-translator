@@ -156,7 +156,7 @@ docker run -d \
 - `ASR_MIN_DURATION_SECONDS`：二次切片时每行最短时长（默认 `1.0` 秒）
 - `ASR_MIN_CHARS`：二次切片时每行最少字符数（默认 `6`）
 - `ASR_MERGE_GAP_MS`：短句合并允许的最大时间间隔（默认 `400` 毫秒）
-- `NFO_ENABLED`：是否读取同名 NFO 作为作品信息线索（默认 `true`）
+- `NFO_ENABLED`：是否读取同名 NFO 作为作品信息线索（默认 `false`）
 - `NFO_SAME_NAME_ONLY`：只读取与媒体同名的 NFO（默认 `true`）
 - `GROUPING_ENABLED`：是否启用语义行分组（默认 `true`）
 - `CONTEXT_AWARE_ENABLED`：是否启用带上下文逐行翻译（默认 `true`）

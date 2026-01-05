@@ -151,7 +151,7 @@ ASR_MIN_CHARS = int(os.getenv("ASR_MIN_CHARS", "6"))
 ASR_MERGE_GAP_MS = int(os.getenv("ASR_MERGE_GAP_MS", "400"))
 GROUPING_ENABLED = os.getenv("GROUPING_ENABLED", "true").lower() == "true"
 CONTEXT_AWARE_ENABLED = os.getenv("CONTEXT_AWARE_ENABLED", "true").lower() == "true"
-NFO_ENABLED = os.getenv("NFO_ENABLED", "true").lower() == "true"
+NFO_ENABLED = os.getenv("NFO_ENABLED", "false").lower() == "true"
 NFO_SAME_NAME_ONLY = os.getenv("NFO_SAME_NAME_ONLY", "true").lower() == "true"
 LOG_DIR = os.getenv("LOG_DIR", "").strip()
 LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "worker.log").strip()
