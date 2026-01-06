@@ -8,8 +8,9 @@ import time
 from email import policy
 from email.parser import BytesParser
 import threading
+import srt
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, quote
 
 
 WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
@@ -124,6 +125,64 @@ def get_upload_defaults():
     asr_mode = WEB_UPLOAD_ASR_MODE_DEFAULT or data.get("ASR_MODE", "offline")
     segment_mode = WEB_UPLOAD_SEGMENT_MODE_DEFAULT or data.get("SEGMENT_MODE", "post")
     return asr_mode, segment_mode
+
+
+def _read_text_file(path):
+    with open(path, "rb") as f:
+        data = f.read()
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data.decode("utf-8-sig", errors="ignore")
+    if data.startswith(b"\xff\xfe") or data.startswith(b"\xfe\xff"):
+        return data.decode("utf-16", errors="ignore")
+    return data.decode("utf-8", errors="ignore")
+
+
+def _write_text_file(path, content):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def get_output_dir(video_path):
+    data, _entries = load_env_file(WEB_CONFIG_PATH)
+    output_to_source = (data.get("OUTPUT_TO_SOURCE_DIR", "true").lower() == "true")
+    if output_to_source:
+        return os.path.dirname(video_path)
+    return data.get("OUT_DIR", "") or os.getenv("OUT_DIR", "")
+
+
+def is_safe_path(path):
+    roots = []
+    watch_dirs = get_watch_dirs()
+    if watch_dirs:
+        roots.extend(watch_dirs)
+    out_dir = load_env_file(WEB_CONFIG_PATH)[0].get("OUT_DIR", "")
+    if out_dir:
+        roots.append(out_dir)
+    abs_path = os.path.abspath(path)
+    for root in roots:
+        if root and abs_path.startswith(os.path.abspath(root) + os.sep):
+            return True
+    return False
+
+
+def find_subtitle_candidates(video_path):
+    out_dir = get_output_dir(video_path)
+    if not out_dir:
+        return []
+    base = os.path.splitext(os.path.basename(video_path))[0]
+    try:
+        entries = os.listdir(out_dir)
+    except FileNotFoundError:
+        return []
+    results = []
+    for name in entries:
+        if not name.lower().endswith(".srt"):
+            continue
+        stem = os.path.splitext(name)[0]
+        if stem == base or stem.startswith(f"{base}."):
+            results.append(os.path.join(out_dir, name))
+    return sorted(results)
 
 
 def update_env_file(path, updates):
@@ -506,6 +565,7 @@ def render_jobs(jobs, message=""):
         asr_mode = str(meta.get("asr_mode", ""))
         segment_mode = str(meta.get("segment_mode", ""))
         created = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(created_at))
+        subtitle_link = f"<a href=\"/subtitle?video={quote(path)}\">查看</a>"
         rows.append(
             "<tr>"
             f"<td>{html.escape(job_id)}</td>"
@@ -513,6 +573,7 @@ def render_jobs(jobs, message=""):
             f"<td>{html.escape(status)}</td>"
             f"<td>{html.escape(asr_mode)}</td>"
             f"<td>{html.escape(segment_mode)}</td>"
+            f"<td>{subtitle_link}</td>"
             f"<td>{html.escape(created)}</td>"
             "</tr>"
         )
@@ -549,7 +610,7 @@ def render_jobs(jobs, message=""):
     </form>
     <table>
       <thead>
-        <tr><th>任务 ID</th><th>路径</th><th>状态</th><th>ASR</th><th>切片</th><th>创建时间</th></tr>
+        <tr><th>任务 ID</th><th>路径</th><th>状态</th><th>ASR</th><th>切片</th><th>字幕</th><th>创建时间</th></tr>
       </thead>
       <tbody>
         {rows_html}
@@ -657,6 +718,57 @@ def render_logs(logs, keyword="", limit=200):
 """
 
 
+def render_subtitle_editor(video_path, subtitle_path, content, candidates, message=""):
+    notice = f"<div class='notice'>{html.escape(message)}</div>" if message else ""
+    links = []
+    for path in candidates:
+        label = os.path.basename(path)
+        links.append(
+            f"<a href=\"/subtitle?path={quote(path)}&video={quote(video_path)}\">{html.escape(label)}</a>"
+        )
+    link_html = " | ".join(links) if links else "暂无字幕文件"
+    return f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>字幕编辑</title>
+  <style>
+    body {{ font-family: "IBM Plex Serif", serif; background: #f7f4ef; color: #1f1c18; }}
+    main {{ max-width: 1100px; margin: 0 auto; padding: 24px; }}
+    nav a {{ margin-right: 12px; color: #c65d31; text-decoration: none; }}
+    textarea {{ width: 100%; min-height: 480px; padding: 12px; border-radius: 12px; border: 1px solid #e4d8c8; }}
+    button {{ border: none; border-radius: 999px; padding: 8px 16px; background: #c65d31; color: #fff; }}
+    .notice {{ background: #fff1d9; border: 1px solid #e4d8c8; padding: 10px 12px; border-radius: 10px; }}
+    .meta {{ color: #6f655a; font-size: 12px; margin: 8px 0 12px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <nav>
+      <a href="/">设置</a>
+      <a href="/upload">上传</a>
+      <a href="/jobs">任务</a>
+      <a href="/logs">日志</a>
+    </nav>
+    <h1>字幕编辑</h1>
+    {notice}
+    <div class="meta">视频：{html.escape(video_path)}</div>
+    <div class="meta">当前字幕：{html.escape(subtitle_path)}</div>
+    <div class="meta">可选字幕：{link_html}</div>
+    <form method="post">
+      <input type="hidden" name="path" value="{html.escape(subtitle_path)}" />
+      <textarea name="content">{html.escape(content)}</textarea>
+      <div style="margin-top: 12px;">
+        <button type="submit">保存字幕</button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>
+"""
+
+
 class SettingsHandler(BaseHTTPRequestHandler):
     def _send_html(self, content, status=200):
         data = content.encode("utf-8")
@@ -678,6 +790,8 @@ class SettingsHandler(BaseHTTPRequestHandler):
             return self._send_html(page)
         if path == "/logs":
             return self._handle_logs()
+        if path == "/subtitle":
+            return self._handle_subtitle()
         values, _entries = load_env_file(WEB_CONFIG_PATH)
         sections = load_schema(WEB_SCHEMA_PATH)
         page = render_page(values, sections)
@@ -698,6 +812,8 @@ class SettingsHandler(BaseHTTPRequestHandler):
             return self._send_html(page)
         if path == "/logs":
             return self._handle_logs(post=True)
+        if path == "/subtitle":
+            return self._handle_subtitle(post=True)
         length = int(self.headers.get("Content-Length", 0))
         data = self.rfile.read(length).decode("utf-8")
         params = parse_qs(data, keep_blank_values=True)
@@ -803,6 +919,62 @@ class SettingsHandler(BaseHTTPRequestHandler):
             limit = max(1, min(1000, int(limit_raw)))
         logs = read_logs(keyword=keyword, limit=limit)
         page = render_logs(logs, keyword=keyword, limit=limit)
+        return self._send_html(page)
+
+    def _handle_subtitle(self, post=False):
+        if post:
+            length = int(self.headers.get("Content-Length", 0))
+            data = self.rfile.read(length).decode("utf-8")
+            params = parse_qs(data, keep_blank_values=True)
+        else:
+            params = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+        video_path = (params.get("video") or [""])[0]
+        subtitle_path = (params.get("path") or [""])[0]
+        candidates = []
+        if video_path:
+            candidates = find_subtitle_candidates(video_path)
+            if not subtitle_path and candidates:
+                subtitle_path = candidates[0]
+        if not subtitle_path or not is_safe_path(subtitle_path):
+            page = render_subtitle_editor(
+                video_path,
+                subtitle_path or "",
+                "",
+                candidates,
+                message="字幕路径不可用",
+            )
+            return self._send_html(page, status=400)
+        if post:
+            content = (params.get("content") or [""])[0]
+            try:
+                srt.parse(content)
+            except Exception:  # noqa: BLE001
+                page = render_subtitle_editor(
+                    video_path,
+                    subtitle_path,
+                    content,
+                    candidates,
+                    message="SRT 格式可能有误，请检查",
+                )
+                return self._send_html(page, status=400)
+            if os.path.exists(subtitle_path):
+                ts = time.strftime("%Y%m%d%H%M%S", time.localtime())
+                backup = f"{subtitle_path}.bak.{ts}"
+                try:
+                    os.replace(subtitle_path, backup)
+                except OSError:
+                    pass
+            _write_text_file(subtitle_path, content)
+            page = render_subtitle_editor(
+                video_path,
+                subtitle_path,
+                content,
+                candidates,
+                message="保存成功",
+            )
+            return self._send_html(page)
+        content = _read_text_file(subtitle_path) if os.path.exists(subtitle_path) else ""
+        page = render_subtitle_editor(video_path, subtitle_path, content, candidates)
         return self._send_html(page)
 
     def log_message(self, format, *args):

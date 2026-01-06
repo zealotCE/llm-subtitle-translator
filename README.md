@@ -72,6 +72,7 @@ docker run --rm -p 8000:8000 \
 - 上传页：`http://localhost:8000/upload`
 - 任务页：`http://localhost:8000/jobs`
 - 日志页：`http://localhost:8000/logs`
+- 字幕编辑：在任务页点击“查看”
 
 环境变量：
 - `WEB_HOST`：默认 `0.0.0.0`
@@ -97,6 +98,8 @@ docker run --rm -p 8000:8000 \
   "segment_mode": "auto"
 }
 ```
+
+字幕编辑保存时会自动备份原文件（`.bak.YYYYmmddHHMMSS`）。
 
 ## 配置说明（环境变量）
 
@@ -244,6 +247,9 @@ docker exec <container> sh -c 'touch /watch/.scan_now'
 - `GLOSSARY_PATH`：术语表 YAML 路径（为空则不加载）
 - `GLOSSARY_CONFIDENCE_THRESHOLD`：启用作品专属术语表的置信度阈值（默认 `0.75`）
 - `MIN_TRANSLATE_DURATION`：小于该时长（秒）的视频跳过翻译（默认 `60`）
+- `EVAL_COLLECT`：是否采集评估样本（默认 `false`）
+- `EVAL_OUTPUT_DIR`：评估样本输出目录（默认 `eval`，相对 `OUT_DIR`）
+- `EVAL_SAMPLE_RATE`：评估采样比例（默认 `1.0`）
 - `ASR_MAX_DURATION_SECONDS`：二次切片时每行最长时长（默认 `3.5` 秒）
 - `ASR_MAX_CHARS`：二次切片时每行最大字符数（默认 `25`）
 - `ASR_MIN_DURATION_SECONDS`：二次切片时每行最短时长（默认 `1.0` 秒）

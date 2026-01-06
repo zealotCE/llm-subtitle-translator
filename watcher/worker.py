@@ -209,6 +209,10 @@ LOG_LOCK = threading.Lock()
 CACHE_DIR = os.path.join(OUT_DIR, "cache")
 CACHE_DB = os.path.join(CACHE_DIR, "translate_cache.db")
 
+EVAL_COLLECT = os.getenv("EVAL_COLLECT", "false").lower() == "true"
+EVAL_OUTPUT_DIR = os.getenv("EVAL_OUTPUT_DIR", "eval").strip()
+EVAL_SAMPLE_RATE = float(os.getenv("EVAL_SAMPLE_RATE", "1.0"))
+
 SIMPLIFIED_TOKENS = (
     "zh-hans",
     "zh_cn",
@@ -780,6 +784,49 @@ def output_paths(name, out_dir):
     lock_path = os.path.join(out_dir, f"{suffix_name}.lock")
     raw_path = os.path.join(out_dir, f"{suffix_name}.raw.json")
     return srt_path, done_path, lock_path, raw_path
+
+
+def should_collect_eval(video_path):
+    if not EVAL_COLLECT:
+        return False
+    if EVAL_SAMPLE_RATE <= 0:
+        return False
+    if EVAL_SAMPLE_RATE >= 1:
+        return True
+    digest = hashlib.sha256(video_path.encode("utf-8")).hexdigest()
+    value = int(digest[:8], 16) / 0xFFFFFFFF
+    return value <= EVAL_SAMPLE_RATE
+
+
+def eval_output_dir_for(out_dir):
+    if not EVAL_OUTPUT_DIR:
+        return ""
+    if os.path.isabs(EVAL_OUTPUT_DIR):
+        return EVAL_OUTPUT_DIR
+    return os.path.join(out_dir, EVAL_OUTPUT_DIR)
+
+
+def save_eval_sample(name, out_dir, reference_text, source_text, candidate_text, meta):
+    eval_dir = eval_output_dir_for(out_dir)
+    if not eval_dir:
+        return
+    os.makedirs(eval_dir, exist_ok=True)
+    ref_path = os.path.join(eval_dir, f"{name}.eval.ref.srt")
+    src_path = os.path.join(eval_dir, f"{name}.eval.src.srt")
+    cand_path = os.path.join(eval_dir, f"{name}.eval.cand.srt")
+    meta_path = os.path.join(eval_dir, f"{name}.eval.json")
+    if reference_text:
+        with open(ref_path, "w", encoding="utf-8") as f:
+            f.write(reference_text)
+    if source_text:
+        with open(src_path, "w", encoding="utf-8") as f:
+            f.write(source_text)
+    if candidate_text:
+        with open(cand_path, "w", encoding="utf-8") as f:
+            f.write(candidate_text)
+    if meta:
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
 
 
 def is_stable_file(path):
@@ -3718,6 +3765,9 @@ def process_video(video_path):
     overrides = load_job_overrides(video_path)
     asr_mode = (overrides.get("asr_mode") or ASR_MODE).strip().lower()
     segment_mode = (overrides.get("segment_mode") or SEGMENT_MODE).strip().lower()
+    eval_enabled = should_collect_eval(video_path)
+    eval_reference_text = ""
+    eval_skip_main_srt = False
 
     skip, reason = should_skip(video_path)
     if skip:
@@ -3867,29 +3917,42 @@ def process_video(video_path):
         if not IGNORE_SIMPLIFIED_SUBTITLE and (
             simplified_subs or os.path.exists(simplified_plain_path) or os.path.exists(simplified_llm_path)
         ):
-            log("SKIP", "检测到简体中文字幕，跳过识别与翻译", path=video_path)
+            if not eval_enabled:
+                log("SKIP", "检测到简体中文字幕，跳过识别与翻译", path=video_path)
+                try:
+                    if simplified_subs:
+                        subs, srt_text, tmp_srt = load_subtitles_from_source(
+                            video_path, simplified_subs[0]
+                        )
+                        with open(srt_path, "w", encoding="utf-8") as f:
+                            f.write(srt_text)
+                        if srt_path != simplified_plain_path:
+                            with open(simplified_plain_path, "w", encoding="utf-8") as f:
+                                f.write(srt_text)
+                        log(
+                            "INFO",
+                            "已保存简体字幕",
+                            path=video_path,
+                            output=srt_path,
+                            simplified_output=simplified_plain_path,
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    log("ERROR", "提取简体字幕失败", path=video_path, error=str(exc))
+                with open(done_path, "w", encoding="utf-8") as f:
+                    f.write("done")
+                return
+            log("INFO", "检测到简体字幕，启用评估采集", path=video_path)
+            eval_skip_main_srt = True
             try:
                 if simplified_subs:
-                    subs, srt_text, tmp_srt = load_subtitles_from_source(
+                    ref_subs, ref_text, tmp_srt = load_subtitles_from_source(
                         video_path, simplified_subs[0]
                     )
-                    with open(srt_path, "w", encoding="utf-8") as f:
-                        f.write(srt_text)
-                    if srt_path != simplified_plain_path:
-                        with open(simplified_plain_path, "w", encoding="utf-8") as f:
-                            f.write(srt_text)
-                    log(
-                        "INFO",
-                        "已保存简体字幕",
-                        path=video_path,
-                        output=srt_path,
-                        simplified_output=simplified_plain_path,
-                    )
+                    eval_reference_text = ref_text
+                elif os.path.exists(simplified_plain_path):
+                    eval_reference_text = read_text_file(simplified_plain_path)
             except Exception as exc:  # noqa: BLE001
-                log("ERROR", "提取简体字幕失败", path=video_path, error=str(exc))
-            with open(done_path, "w", encoding="utf-8") as f:
-                f.write("done")
-            return
+                log("ERROR", "读取评估参考字幕失败", path=video_path, error=str(exc))
 
         subs = None
         srt_text = None
@@ -4026,9 +4089,12 @@ def process_video(video_path):
 
             if subs is None or srt_text is None:
                 raise RuntimeError("ASR 结果为空")
-            with open(srt_path, "w", encoding="utf-8") as f:
-                f.write(srt_text)
-            log("INFO", "识别完成并保存字幕", path=video_path, output=srt_path)
+            if eval_skip_main_srt:
+                log("INFO", "评估模式：跳过覆盖主 SRT", path=video_path, output=srt_path)
+            else:
+                with open(srt_path, "w", encoding="utf-8") as f:
+                    f.write(srt_text)
+                log("INFO", "识别完成并保存字幕", path=video_path, output=srt_path)
 
         if TRANSLATE:
             try:
@@ -4182,6 +4248,25 @@ def process_video(video_path):
                                 bi_text = srt.compose(bi_subs)
                                 with open(bi_path, "w", encoding="utf-8") as f:
                                     f.write(bi_text)
+                            if (
+                                eval_enabled
+                                and dst_lang == SIMPLIFIED_LANG
+                                and eval_reference_text
+                            ):
+                                save_eval_sample(
+                                    name,
+                                    out_dir,
+                                    eval_reference_text,
+                                    srt_text,
+                                    trans_text,
+                                    {
+                                        "path": video_path,
+                                        "asr_mode": asr_mode,
+                                        "segment_mode": segment_mode,
+                                        "dst_lang": dst_lang,
+                                        "timestamp": int(time.time()),
+                                    },
+                                )
                             log("INFO", "翻译完成", path=video_path, lang=dst_lang, output=trans_path)
                         except Exception as exc:  # noqa: BLE001
                             with open(failed_log, "a", encoding="utf-8") as f:
