@@ -1105,10 +1105,10 @@ def _normalize_title_text(text):
         return ""
     cleaned = re.sub(r"\[[^\]]*\]", " ", text)
     cleaned = re.sub(r"\([^\)]*\)", " ", cleaned)
-    cleaned = re.sub(r"\b(s\\d{1,2}e\\d{1,3}|ep\\s*\\d+|episode\\s*\\d+)\b", " ", cleaned, flags=re.I)
-    cleaned = re.sub(r"第\\s*\\d+\\s*[话集]", " ", cleaned)
-    cleaned = re.sub(r"[_\\-\\.]+", " ", cleaned)
-    cleaned = re.sub(r"\\s+", " ", cleaned)
+    cleaned = re.sub(r"\b(s\d{1,2}e\d{1,4}|ep\s*\d+|episode\s*\d+)\b", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"第\s*\d+\s*[话集]", " ", cleaned)
+    cleaned = re.sub(r"[_\-.]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip().lower()
 
 
@@ -1451,9 +1451,9 @@ def _extract_year(date_value):
 
 def _guess_type_from_path(path):
     name = os.path.basename(path)
-    if re.search(r"[sS]\\d{1,2}\\s*[eE]\\d{1,3}", name):
+    if re.search(r"[sS]\d{1,2}\s*[eE]\d{1,4}", name):
         return "tv"
-    if re.search(r"\\b(ep|episode)\\s*\\d{1,4}\\b", name, re.I):
+    if re.search(r"\b(ep|episode)\s*\d{1,4}\b", name, re.I):
         return "tv"
     return "movie"
 
