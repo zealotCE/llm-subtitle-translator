@@ -212,6 +212,7 @@ CACHE_DB = os.path.join(CACHE_DIR, "translate_cache.db")
 EVAL_COLLECT = os.getenv("EVAL_COLLECT", "false").lower() == "true"
 EVAL_OUTPUT_DIR = os.getenv("EVAL_OUTPUT_DIR", "eval").strip()
 EVAL_SAMPLE_RATE = float(os.getenv("EVAL_SAMPLE_RATE", "1.0"))
+MANUAL_METADATA_DIR = os.getenv("MANUAL_METADATA_DIR", "metadata").strip()
 
 SIMPLIFIED_TOKENS = (
     "zh-hans",
@@ -804,6 +805,49 @@ def eval_output_dir_for(out_dir):
     if os.path.isabs(EVAL_OUTPUT_DIR):
         return EVAL_OUTPUT_DIR
     return os.path.join(out_dir, EVAL_OUTPUT_DIR)
+
+
+def manual_metadata_dir_for(out_dir):
+    if not MANUAL_METADATA_DIR:
+        return ""
+    if os.path.isabs(MANUAL_METADATA_DIR):
+        return MANUAL_METADATA_DIR
+    return os.path.join(out_dir, MANUAL_METADATA_DIR)
+
+
+def load_manual_metadata(video_path, out_dir):
+    name = base_name(video_path)
+    meta_dir = manual_metadata_dir_for(out_dir)
+    if not meta_dir:
+        return None
+    path = os.path.join(meta_dir, f"{name}.manual.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(data, dict):
+        return None
+    title_localized = data.get("title_localized") or {}
+    episode_title = data.get("episode_title") or {}
+    characters = data.get("characters") or []
+    external_ids = data.get("external_ids") or {}
+    return WorkMetadata(
+        title_original=data.get("title_original"),
+        title_localized=title_localized if isinstance(title_localized, dict) else {},
+        type=data.get("type"),
+        year=data.get("year"),
+        season=data.get("season"),
+        episode=data.get("episode"),
+        episode_title=episode_title if isinstance(episode_title, dict) else {},
+        characters=characters if isinstance(characters, list) else [],
+        external_ids=external_ids if isinstance(external_ids, dict) else {},
+        confidence=1.0,
+        sources=["manual"],
+        raw={"manual": data},
+    )
 
 
 def save_eval_sample(name, out_dir, reference_text, source_text, candidate_text, meta):
@@ -4143,6 +4187,7 @@ def process_video(video_path):
                     confidence_threshold=GLOSSARY_CONFIDENCE_THRESHOLD,
                 )
                 metadata = None
+                metadata_config = None
                 if METADATA_ENABLED:
                     metadata_config = _build_metadata_config()
                     alias_map = load_title_aliases(TITLE_ALIASES_PATH)
@@ -4175,7 +4220,11 @@ def process_video(video_path):
                     )
                     metadata_service = MetadataService(metadata_config)
                     metadata = metadata_service.resolve_work(query)
-                if metadata and metadata_config.debug:
+                manual_metadata = load_manual_metadata(video_path, out_dir)
+                if manual_metadata:
+                    metadata = manual_metadata
+                    log("INFO", "命中人工元数据", path=video_path)
+                if metadata and metadata_config and metadata_config.debug:
                     meta_path = os.path.join(out_dir, f"{name}.metadata.json")
                     with open(meta_path, "w", encoding="utf-8") as f:
                         json.dump(

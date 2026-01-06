@@ -73,6 +73,8 @@ docker run --rm -p 8000:8000 \
 - 任务页：`http://localhost:8000/jobs`
 - 日志页：`http://localhost:8000/logs`
 - 字幕编辑：在任务页点击“查看”
+- 媒体库：`http://localhost:8000/media`
+- 元数据：在媒体库点击“元数据”
 
 环境变量：
 - `WEB_HOST`：默认 `0.0.0.0`
@@ -89,6 +91,11 @@ docker run --rm -p 8000:8000 \
 - `WEB_UPLOAD_ASR_MODE_DEFAULT`：上传页默认 ASR 模式（默认读取 `.env` 的 `ASR_MODE`）
 - `WEB_UPLOAD_SEGMENT_MODE_DEFAULT`：上传页默认切片模式（默认读取 `.env` 的 `SEGMENT_MODE`）
 - `WEB_WAL_CHECKPOINT_EVERY`：SQLite WAL 定期 checkpoint 频率（默认 `50` 次写入）
+- `WEB_MEDIA_DIRS`：媒体库扫描目录（默认使用 `WATCH_DIRS`）
+- `WEB_MEDIA_RECURSIVE`：媒体库是否递归扫描（默认 `true`）
+- `WEB_ARCHIVE_DIR`：归档目录（设置后归档会移动文件）
+- `WEB_ALLOW_DELETE`：允许删除媒体文件（默认 `false`）
+- `WEB_METADATA_DIR`：人工元数据保存目录（默认 `metadata`）
 
 上传页会为每个文件生成同名任务覆盖文件 `<name>.job.json`，可手工编辑：
 
@@ -251,6 +258,7 @@ docker exec <container> sh -c 'touch /watch/.scan_now'
 - `EVAL_COLLECT`：是否采集评估样本（默认 `false`）
 - `EVAL_OUTPUT_DIR`：评估样本输出目录（默认 `eval`，相对 `OUT_DIR`）
 - `EVAL_SAMPLE_RATE`：评估采样比例（默认 `1.0`）
+- `MANUAL_METADATA_DIR`：人工元数据目录（默认 `metadata`）
 - `ASR_MAX_DURATION_SECONDS`：二次切片时每行最长时长（默认 `3.5` 秒）
 - `ASR_MAX_CHARS`：二次切片时每行最大字符数（默认 `25`）
 - `ASR_MIN_DURATION_SECONDS`：二次切片时每行最短时长（默认 `1.0` 秒）

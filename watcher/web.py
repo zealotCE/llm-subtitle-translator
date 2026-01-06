@@ -28,9 +28,16 @@ WEB_LOG_LIMIT = int(os.getenv("WEB_LOG_LIMIT", "200"))
 WEB_UPLOAD_ASR_MODE_DEFAULT = os.getenv("WEB_UPLOAD_ASR_MODE_DEFAULT", "")
 WEB_UPLOAD_SEGMENT_MODE_DEFAULT = os.getenv("WEB_UPLOAD_SEGMENT_MODE_DEFAULT", "")
 WEB_WAL_CHECKPOINT_EVERY = int(os.getenv("WEB_WAL_CHECKPOINT_EVERY", "50"))
+WEB_MEDIA_DIRS = os.getenv("WEB_MEDIA_DIRS", "")
+WEB_MEDIA_RECURSIVE = os.getenv("WEB_MEDIA_RECURSIVE", "true").lower() == "true"
+WEB_ARCHIVE_DIR = os.getenv("WEB_ARCHIVE_DIR", "")
+WEB_ALLOW_DELETE = os.getenv("WEB_ALLOW_DELETE", "false").lower() == "true"
+WEB_METADATA_DIR = os.getenv("WEB_METADATA_DIR", "metadata")
 
 _wal_lock = threading.Lock()
 _wal_counter = 0
+
+VIDEO_EXTS = {".mp4", ".mkv", ".webm", ".mov", ".avi"}
 
 SENSITIVE_KEYS = {
     "DASHSCOPE_API_KEY",
@@ -127,6 +134,61 @@ def get_upload_defaults():
     return asr_mode, segment_mode
 
 
+def get_media_dirs():
+    if WEB_MEDIA_DIRS.strip():
+        raw = WEB_MEDIA_DIRS
+    else:
+        raw = WEB_WATCH_DIRS or load_env_file(WEB_CONFIG_PATH)[0].get("WATCH_DIRS", "")
+    items = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        items.append(_unquote_env_value(part))
+    return items
+
+
+def metadata_dir_for(video_path):
+    out_dir = get_output_dir(video_path)
+    if not out_dir:
+        return ""
+    if os.path.isabs(WEB_METADATA_DIR):
+        return WEB_METADATA_DIR
+    return os.path.join(out_dir, WEB_METADATA_DIR)
+
+
+def metadata_path_for(video_path):
+    meta_dir = metadata_dir_for(video_path)
+    if not meta_dir:
+        return ""
+    base = os.path.splitext(os.path.basename(video_path))[0]
+    return os.path.join(meta_dir, f"{base}.manual.json")
+
+
+def load_manual_metadata(video_path):
+    path = metadata_path_for(video_path)
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:  # noqa: BLE001
+        return {}
+    if isinstance(data, dict):
+        return data
+    return {}
+
+
+def save_manual_metadata(video_path, data):
+    path = metadata_path_for(video_path)
+    if not path:
+        return False
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return True
+
+
 def _read_text_file(path):
     with open(path, "rb") as f:
         data = f.read()
@@ -161,6 +223,14 @@ def is_safe_path(path):
         roots.append(out_dir)
     abs_path = os.path.abspath(path)
     for root in roots:
+        if root and abs_path.startswith(os.path.abspath(root) + os.sep):
+            return True
+    return False
+
+
+def is_media_path(path):
+    abs_path = os.path.abspath(path)
+    for root in get_media_dirs():
         if root and abs_path.startswith(os.path.abspath(root) + os.sep):
             return True
     return False
@@ -229,6 +299,16 @@ def _init_db():
         "created_at INTEGER NOT NULL"
         ")"
     )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS media ("
+        "path TEXT PRIMARY KEY, "
+        "size INTEGER NOT NULL, "
+        "mtime INTEGER NOT NULL, "
+        "archived INTEGER NOT NULL DEFAULT 0, "
+        "label TEXT, "
+        "updated_at INTEGER NOT NULL"
+        ")"
+    )
     conn.commit()
     return conn
 
@@ -271,6 +351,118 @@ def list_jobs():
     rows = cur.fetchall()
     conn.close()
     return rows
+
+
+def upsert_media(path):
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return False
+    conn = _init_db()
+    if conn is None:
+        return False
+    cur = conn.execute("SELECT archived, label FROM media WHERE path = ?", (path,))
+    row = cur.fetchone()
+    archived = row[0] if row else 0
+    label = row[1] if row else ""
+    conn.execute(
+        "INSERT OR REPLACE INTO media (path, size, mtime, archived, label, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            path,
+            int(stat.st_size),
+            int(stat.st_mtime),
+            archived,
+            label,
+            int(time.time()),
+        ),
+    )
+    conn.commit()
+    _maybe_checkpoint(conn)
+    conn.close()
+    return True
+
+
+def list_media(include_archived=True):
+    conn = _init_db()
+    if conn is None:
+        return []
+    if include_archived:
+        cur = conn.execute(
+            "SELECT path, size, mtime, archived, label FROM media ORDER BY mtime DESC"
+        )
+    else:
+        cur = conn.execute(
+            "SELECT path, size, mtime, archived, label FROM media WHERE archived = 0 ORDER BY mtime DESC"
+        )
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def set_media_archived(path, archived):
+    conn = _init_db()
+    if conn is None:
+        return False
+    conn.execute(
+        "UPDATE media SET archived = ?, updated_at = ? WHERE path = ?",
+        (1 if archived else 0, int(time.time()), path),
+    )
+    conn.commit()
+    _maybe_checkpoint(conn)
+    conn.close()
+    return True
+
+
+def delete_media(path, delete_file=False):
+    if delete_file:
+        if not (is_safe_path(path) or is_media_path(path)):
+            return False
+        try:
+            os.remove(path)
+        except OSError:
+            return False
+    conn = _init_db()
+    if conn is None:
+        return False
+    conn.execute("DELETE FROM media WHERE path = ?", (path,))
+    conn.commit()
+    _maybe_checkpoint(conn)
+    conn.close()
+    return True
+
+
+def scan_media():
+    media_dirs = get_media_dirs()
+    if not media_dirs:
+        return 0
+    count = 0
+    for base in media_dirs:
+        if not os.path.exists(base):
+            continue
+        if WEB_MEDIA_RECURSIVE:
+            walker = os.walk(base)
+            for root, _dirs, files in walker:
+                for name in files:
+                    if os.path.splitext(name)[1].lower() not in VIDEO_EXTS:
+                        continue
+                    path = os.path.join(root, name)
+                    if upsert_media(path):
+                        count += 1
+        else:
+            try:
+                entries = os.listdir(base)
+            except OSError:
+                continue
+            for name in entries:
+                path = os.path.join(base, name)
+                if not os.path.isfile(path):
+                    continue
+                if os.path.splitext(name)[1].lower() not in VIDEO_EXTS:
+                    continue
+                if upsert_media(path):
+                    count += 1
+    return count
 
 
 def infer_job_status(path):
@@ -542,6 +734,7 @@ def render_page(values, sections, message=""):
       <a href="/upload">上传</a>
       <a href="/jobs">任务</a>
       <a href="/logs">日志</a>
+      <a href="/media">媒体库</a>
     </nav>
     {notice}
     <form method="post">
@@ -602,6 +795,7 @@ def render_jobs(jobs, message=""):
       <a href="/upload">上传</a>
       <a href="/jobs">任务</a>
       <a href="/logs">日志</a>
+      <a href="/media">媒体库</a>
     </nav>
     <h1>任务列表</h1>
     {notice}
@@ -648,6 +842,7 @@ def render_upload(message="", asr_mode="", segment_mode=""):
       <a href="/upload">上传</a>
       <a href="/jobs">任务</a>
       <a href="/logs">日志</a>
+      <a href="/media">媒体库</a>
     </nav>
     <h1>上传媒体</h1>
     {notice}
@@ -700,6 +895,7 @@ def render_logs(logs, keyword="", limit=200):
       <a href="/upload">上传</a>
       <a href="/jobs">任务</a>
       <a href="/logs">日志</a>
+      <a href="/media">媒体库</a>
     </nav>
     <h1>日志</h1>
     <form method="get">
@@ -750,6 +946,7 @@ def render_subtitle_editor(video_path, subtitle_path, content, candidates, messa
       <a href="/upload">上传</a>
       <a href="/jobs">任务</a>
       <a href="/logs">日志</a>
+      <a href="/media">媒体库</a>
     </nav>
     <h1>字幕编辑</h1>
     {notice}
@@ -769,6 +966,149 @@ def render_subtitle_editor(video_path, subtitle_path, content, candidates, messa
 """
 
 
+def render_media(media_rows, message=""):
+    rows = []
+    for path, size, mtime, archived, label in media_rows:
+        status = "archived" if archived else "active"
+        size_mb = round(size / 1024 / 1024, 2)
+        mtime_text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime))
+        action = "unarchive" if archived else "archive"
+        action_label = "取消归档" if archived else "归档"
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(path)}</td>"
+            f"<td>{size_mb} MB</td>"
+            f"<td>{html.escape(status)}</td>"
+            f"<td>{html.escape(mtime_text)}</td>"
+            f"<td><a href=\"/metadata?path={quote(path)}\">元数据</a></td>"
+            f"<td>"
+            f"<form method=\"post\" style=\"display:inline\">"
+            f"<input type=\"hidden\" name=\"path\" value=\"{html.escape(path)}\"/>"
+            f"<input type=\"hidden\" name=\"action\" value=\"{action}\"/>"
+            f"<button type=\"submit\">{action_label}</button>"
+            f"</form>"
+            f"</td>"
+            f"<td>"
+            f"<form method=\"post\" style=\"display:inline\">"
+            f"<input type=\"hidden\" name=\"path\" value=\"{html.escape(path)}\"/>"
+            f"<input type=\"hidden\" name=\"action\" value=\"delete\"/>"
+            f"<button type=\"submit\">删除</button>"
+            f"</form>"
+            f"</td>"
+            "</tr>"
+        )
+    rows_html = "\n".join(rows) if rows else "<tr><td colspan='7'>暂无媒体</td></tr>"
+    notice = f"<div class='notice'>{html.escape(message)}</div>" if message else ""
+    return f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>媒体库</title>
+  <style>
+    body {{ font-family: "IBM Plex Serif", serif; background: #f7f4ef; color: #1f1c18; }}
+    main {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
+    table {{ width: 100%; border-collapse: collapse; background: #fff8ef; }}
+    th, td {{ border: 1px solid #e4d8c8; padding: 8px; text-align: left; }}
+    th {{ background: #f0e2d2; }}
+    nav a {{ margin-right: 12px; color: #c65d31; text-decoration: none; }}
+    .notice {{ background: #fff1d9; border: 1px solid #e4d8c8; padding: 10px 12px; border-radius: 10px; }}
+    .actions {{ margin-bottom: 12px; }}
+    button {{ border: none; border-radius: 999px; padding: 6px 12px; background: #c65d31; color: #fff; }}
+  </style>
+</head>
+<body>
+  <main>
+    <nav>
+      <a href="/">设置</a>
+      <a href="/upload">上传</a>
+      <a href="/jobs">任务</a>
+      <a href="/logs">日志</a>
+      <a href="/media">媒体库</a>
+    </nav>
+    <h1>媒体库</h1>
+    {notice}
+    <div class="actions">
+      <form method="post" style="display:inline">
+        <input type="hidden" name="action" value="scan"/>
+        <button type="submit">扫描媒体</button>
+      </form>
+    </div>
+    <table>
+      <thead>
+        <tr><th>路径</th><th>大小</th><th>状态</th><th>更新时间</th><th>元数据</th><th>归档</th><th>删除</th></tr>
+      </thead>
+      <tbody>
+        {rows_html}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
+"""
+
+
+def render_metadata_editor(video_path, meta, message=""):
+    notice = f"<div class='notice'>{html.escape(message)}</div>" if message else ""
+    title_original = meta.get("title_original", "")
+    title_zh = meta.get("title_localized", {}).get("zh-CN", "")
+    title_en = meta.get("title_localized", {}).get("en-US", "")
+    season = meta.get("season", "")
+    episode = meta.get("episode", "")
+    year = meta.get("year", "")
+    work_type = meta.get("type", "")
+    episode_title_zh = meta.get("episode_title", {}).get("zh-CN", "")
+    return f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>元数据</title>
+  <style>
+    body {{ font-family: "IBM Plex Serif", serif; background: #f7f4ef; color: #1f1c18; }}
+    main {{ max-width: 900px; margin: 0 auto; padding: 24px; }}
+    nav a {{ margin-right: 12px; color: #c65d31; text-decoration: none; }}
+    form {{ background: #fff8ef; padding: 18px; border: 1px solid #e4d8c8; border-radius: 14px; display: grid; gap: 10px; }}
+    input {{ padding: 8px 10px; border-radius: 8px; border: 1px solid #e4d8c8; }}
+    button {{ border: none; border-radius: 999px; padding: 8px 16px; background: #c65d31; color: #fff; }}
+    .notice {{ background: #fff1d9; border: 1px solid #e4d8c8; padding: 10px 12px; border-radius: 10px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <nav>
+      <a href="/">设置</a>
+      <a href="/media">媒体库</a>
+    </nav>
+    <h1>元数据</h1>
+    {notice}
+    <div style="color:#6f655a;font-size:12px;">{html.escape(video_path)}</div>
+    <form method="post">
+      <input type="hidden" name="path" value="{html.escape(video_path)}"/>
+      <label>原始标题</label>
+      <input name="title_original" value="{html.escape(str(title_original))}"/>
+      <label>简体标题</label>
+      <input name="title_zh" value="{html.escape(str(title_zh))}"/>
+      <label>英文标题</label>
+      <input name="title_en" value="{html.escape(str(title_en))}"/>
+      <label>类型</label>
+      <input name="type" value="{html.escape(str(work_type))}"/>
+      <label>年份</label>
+      <input name="year" value="{html.escape(str(year))}"/>
+      <label>季</label>
+      <input name="season" value="{html.escape(str(season))}"/>
+      <label>集</label>
+      <input name="episode" value="{html.escape(str(episode))}"/>
+      <label>集标题（简体）</label>
+      <input name="episode_title_zh" value="{html.escape(str(episode_title_zh))}"/>
+      <button type="submit">保存元数据</button>
+    </form>
+  </main>
+</body>
+</html>
+"""
+
+
 class SettingsHandler(BaseHTTPRequestHandler):
     def _send_html(self, content, status=200):
         data = content.encode("utf-8")
@@ -779,7 +1119,8 @@ class SettingsHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
         if path == "/jobs":
             jobs = list_jobs()
             page = render_jobs(jobs)
@@ -792,6 +1133,11 @@ class SettingsHandler(BaseHTTPRequestHandler):
             return self._handle_logs()
         if path == "/subtitle":
             return self._handle_subtitle()
+        if path == "/media":
+            rows = list_media()
+            return self._send_html(render_media(rows))
+        if path == "/metadata":
+            return self._handle_metadata()
         values, _entries = load_env_file(WEB_CONFIG_PATH)
         sections = load_schema(WEB_SCHEMA_PATH)
         page = render_page(values, sections)
@@ -814,6 +1160,10 @@ class SettingsHandler(BaseHTTPRequestHandler):
             return self._handle_logs(post=True)
         if path == "/subtitle":
             return self._handle_subtitle(post=True)
+        if path == "/media":
+            return self._handle_media()
+        if path == "/metadata":
+            return self._handle_metadata(post=True)
         length = int(self.headers.get("Content-Length", 0))
         data = self.rfile.read(length).decode("utf-8")
         params = parse_qs(data, keep_blank_values=True)
@@ -976,6 +1326,84 @@ class SettingsHandler(BaseHTTPRequestHandler):
         content = _read_text_file(subtitle_path) if os.path.exists(subtitle_path) else ""
         page = render_subtitle_editor(video_path, subtitle_path, content, candidates)
         return self._send_html(page)
+
+    def _handle_media(self):
+        length = int(self.headers.get("Content-Length", 0))
+        data = self.rfile.read(length).decode("utf-8")
+        params = parse_qs(data, keep_blank_values=True)
+        action = (params.get("action") or [""])[0]
+        path = (params.get("path") or [""])[0]
+        message = ""
+        if action == "scan":
+            count = scan_media()
+            message = f"已扫描 {count} 个媒体"
+        elif action in {"archive", "unarchive"} and path:
+            if not is_media_path(path):
+                message = "路径不在媒体目录"
+                rows = list_media()
+                return self._send_html(render_media(rows, message=message), status=400)
+            archived = action == "archive"
+            if archived and WEB_ARCHIVE_DIR:
+                try:
+                    os.makedirs(WEB_ARCHIVE_DIR, exist_ok=True)
+                    dest = os.path.join(WEB_ARCHIVE_DIR, os.path.basename(path))
+                    os.replace(path, dest)
+                    delete_media(path, delete_file=False)
+                    upsert_media(dest)
+                    set_media_archived(dest, True)
+                    message = "已归档并移动文件"
+                except OSError:
+                    message = "归档失败"
+            else:
+                set_media_archived(path, archived)
+                message = "已更新状态"
+        elif action == "delete" and path:
+            if not WEB_ALLOW_DELETE:
+                message = "未启用删除权限"
+            else:
+                ok = delete_media(path, delete_file=True)
+                message = "已删除" if ok else "删除失败"
+        rows = list_media()
+        return self._send_html(render_media(rows, message=message))
+
+    def _handle_metadata(self, post=False):
+        if post:
+            length = int(self.headers.get("Content-Length", 0))
+            data = self.rfile.read(length).decode("utf-8")
+            params = parse_qs(data, keep_blank_values=True)
+        else:
+            params = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+        video_path = (params.get("path") or [""])[0]
+        if not video_path:
+            return self._send_html(render_metadata_editor("", {}, message="缺少路径"), status=400)
+        meta = load_manual_metadata(video_path)
+        if post:
+            title_original = (params.get("title_original") or [""])[0].strip()
+            title_zh = (params.get("title_zh") or [""])[0].strip()
+            title_en = (params.get("title_en") or [""])[0].strip()
+            work_type = (params.get("type") or [""])[0].strip()
+            year = (params.get("year") or [""])[0].strip()
+            season = (params.get("season") or [""])[0].strip()
+            episode = (params.get("episode") or [""])[0].strip()
+            episode_title_zh = (params.get("episode_title_zh") or [""])[0].strip()
+            meta = {
+                "title_original": title_original or None,
+                "title_localized": {
+                    "zh-CN": title_zh,
+                    "en-US": title_en,
+                },
+                "type": work_type or None,
+                "year": int(year) if year.isdigit() else None,
+                "season": int(season) if season.isdigit() else None,
+                "episode": int(episode) if episode.isdigit() else None,
+                "episode_title": {"zh-CN": episode_title_zh} if episode_title_zh else {},
+                "external_ids": {},
+                "characters": [],
+            }
+            saved = save_manual_metadata(video_path, meta)
+            message = "已保存" if saved else "保存失败"
+            return self._send_html(render_metadata_editor(video_path, meta, message=message))
+        return self._send_html(render_metadata_editor(video_path, meta))
 
     def log_message(self, format, *args):
         return None
