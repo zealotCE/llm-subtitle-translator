@@ -233,6 +233,7 @@ docker exec <container> sh -c 'touch /watch/.scan_now'
 - `LLM_BASE_URL`：OpenAI-compatible Base URL
 - `LLM_API_KEY`：API Key
 - `LLM_MODEL`：默认 `deepseek-v3.2`
+  - 已验证可用：`deepseek-v3.2`、`qwen3-max-preview`、`qwen3-235b-a22b-thinking-2507`、`kimi-k2-thinking`、`glm-4.7`、`qwen3-next-80b-a3b-thinking`、`qwen3-235b-a22b-instruct-2507`
 - `LLM_TEMPERATURE`：默认 `0.2`
 - `LLM_MAX_TOKENS`：默认 `1024`
 - `BATCH_LINES`：每批行数，默认 `10`
