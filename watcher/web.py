@@ -878,6 +878,10 @@ def render_jobs(jobs, message=""):
     <form method="post" action="/scan" style="margin-bottom: 12px;">
       <button type="submit">触发扫描</button>
     </form>
+    <div style="margin-bottom: 12px;">
+      <a href="/export/jobs?format=json">导出 JSON</a>
+      <a href="/export/jobs?format=csv" style="margin-left:6px;">导出 CSV</a>
+    </div>
     <table>
       <thead>
         <tr><th>任务 ID</th><th>路径</th><th>状态</th><th>ASR</th><th>切片</th><th>字幕</th><th>创建时间</th></tr>
@@ -1014,6 +1018,8 @@ def render_logs(logs, keyword="", limit=200):
       <input name="q" placeholder="关键词" value="{html.escape(keyword)}" />
       <input name="limit" placeholder="条数" value="{html.escape(str(limit))}" />
       <button type="submit">筛选</button>
+      <a href="/export/logs?format=json&q={quote(keyword)}&limit={limit}">导出 JSON</a>
+      <a href="/export/logs?format=csv&q={quote(keyword)}&limit={limit}">导出 CSV</a>
     </form>
     <table>
       <tbody>
@@ -1152,6 +1158,8 @@ def render_media(media_rows, message=""):
         <input type="hidden" name="action" value="scan"/>
         <button type="submit">扫描媒体</button>
       </form>
+      <a style="margin-left:12px;" href="/export/media?format=json">导出 JSON</a>
+      <a style="margin-left:6px;" href="/export/media?format=csv">导出 CSV</a>
     </div>
     <table>
       <thead>
@@ -1290,6 +1298,12 @@ class SettingsHandler(BaseHTTPRequestHandler):
             return self._send_html(render_media(rows))
         if path == "/metadata":
             return self._handle_metadata()
+        if path == "/export/logs":
+            return self._handle_export_logs(parsed)
+        if path == "/export/jobs":
+            return self._handle_export_jobs(parsed)
+        if path == "/export/media":
+            return self._handle_export_media(parsed)
         values, _entries = load_env_file(WEB_CONFIG_PATH)
         sections = load_schema(WEB_SCHEMA_PATH)
         page = render_page(values, sections)
@@ -1578,6 +1592,89 @@ class SettingsHandler(BaseHTTPRequestHandler):
             message = "已保存" if saved else "保存失败"
             return self._send_html(render_metadata_editor(video_path, meta, message=message))
         return self._send_html(render_metadata_editor(video_path, meta))
+
+    def _handle_export_logs(self, parsed):
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        keyword = (params.get("q") or [""])[0].strip()
+        limit_raw = (params.get("limit") or [""])[0].strip()
+        fmt = (params.get("format") or ["json"])[0].strip().lower()
+        limit = WEB_LOG_LIMIT
+        if limit_raw.isdigit():
+            limit = max(1, min(5000, int(limit_raw)))
+        logs = read_logs(keyword=keyword, limit=limit)
+        return self._send_export("logs", logs, fmt)
+
+    def _handle_export_jobs(self, parsed):
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        fmt = (params.get("format") or ["json"])[0].strip().lower()
+        jobs = list_jobs()
+        rows = []
+        for job_id, path, created_at in jobs:
+            status = infer_job_status(path)
+            meta = load_job_meta(path)
+            rows.append(
+                {
+                    "id": job_id,
+                    "path": path,
+                    "status": status,
+                    "asr_mode": meta.get("asr_mode"),
+                    "segment_mode": meta.get("segment_mode"),
+                    "created_at": created_at,
+                }
+            )
+        return self._send_export("jobs", rows, fmt)
+
+    def _handle_export_media(self, parsed):
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        fmt = (params.get("format") or ["json"])[0].strip().lower()
+        rows = list_media()
+        items = []
+        for path, size, mtime, archived, label in rows:
+            items.append(
+                {
+                    "path": path,
+                    "size": size,
+                    "mtime": mtime,
+                    "archived": archived,
+                    "label": label,
+                }
+            )
+        return self._send_export("media", items, fmt)
+
+    def _send_export(self, name, items, fmt):
+        if fmt == "csv":
+            return self._send_csv(name, items)
+        return self._send_json(name, items)
+
+    def _send_json(self, name, items):
+        data = json.dumps(items, ensure_ascii=False, indent=2).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Disposition", f"attachment; filename={name}.json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _send_csv(self, name, items):
+        if not items:
+            body = ""
+        else:
+            keys = list(items[0].keys()) if isinstance(items[0], dict) else ["value"]
+            rows = [",".join(keys)]
+            for item in items:
+                if isinstance(item, dict):
+                    row = [str(item.get(k, "")).replace("\n", " ").replace(",", " ") for k in keys]
+                else:
+                    row = [str(item).replace("\n", " ").replace(",", " ")]
+                rows.append(",".join(row))
+            body = "\n".join(rows)
+        data = body.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", f"attachment; filename={name}.csv")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def log_message(self, format, *args):
         return None

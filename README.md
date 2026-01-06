@@ -75,6 +75,7 @@ docker run --rm -p 8000:8000 \
 - 字幕编辑：在任务页点击“查看”
 - 媒体库：`http://localhost:8000/media`
 - 元数据：在媒体库点击“元数据”
+- 导出：`/export/jobs`、`/export/logs`、`/export/media`
 
 环境变量：
 - `WEB_HOST`：默认 `0.0.0.0`
