@@ -56,6 +56,23 @@ docker compose pull
 docker compose up -d
 ```
 
+### Web 设置页（可选）
+该页面仅负责编辑 `.env`，保存后需手动重启服务才会生效。
+
+```bash
+docker run --rm -p 8000:8000 \
+  -v $(pwd)/.env:/app/.env \
+  -v $(pwd)/.env.example:/app/.env.example \
+  ghcr.io/zealotce/llm-subtitle-translator:latest \
+  python /app/web.py
+```
+
+环境变量：
+- `WEB_HOST`：默认 `0.0.0.0`
+- `WEB_PORT`：默认 `8000`
+- `WEB_CONFIG_PATH`：默认 `/app/.env`
+- `WEB_SCHEMA_PATH`：默认 `/app/.env.example`
+
 ## 配置说明（环境变量）
 
 ### Watch/Output

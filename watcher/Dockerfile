@@ -9,6 +9,7 @@ RUN apt-get update \
 RUN pip install --no-cache-dir dashscope oss2 srt requests pyyaml
 
 COPY worker.py /app/worker.py
+COPY web.py /app/web.py
 
 ENV PYTHONUNBUFFERED=1
 
