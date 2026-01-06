@@ -60,7 +60,7 @@ docker compose up -d
 
 ### Watch/Output
 - `WATCH_DIR`：默认 `/watch`
-- `WATCH_DIRS`：多个监听目录（逗号分隔，优先于 `WATCH_DIR`）
+- `WATCH_DIRS`：多个监听目录（逗号分隔，优先于 `WATCH_DIR`；支持带引号的路径，会自动去引号）
 - `WATCH_RECURSIVE`：是否递归监听子目录（默认 `true`）
 - `OUT_DIR`：默认 `/output`
 - `TMP_DIR`：默认 `/tmp`

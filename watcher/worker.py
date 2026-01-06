@@ -338,11 +338,27 @@ def parse_langs():
     return seen
 
 
+def _strip_quotes(value):
+    if not value:
+        return value
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        return value[1:-1].strip()
+    return value
+
+
 def parse_watch_dirs():
     if WATCH_DIRS:
-        items = [item.strip() for item in WATCH_DIRS.split(",") if item.strip()]
+        items = []
+        for raw in WATCH_DIRS.split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            raw = _strip_quotes(raw)
+            if raw:
+                items.append(raw)
         return items or [WATCH_DIR]
-    return [WATCH_DIR]
+    return [_strip_quotes(WATCH_DIR)]
 
 
 WATCH_DIR_LIST = parse_watch_dirs()
