@@ -6,3 +6,7 @@ output/
 tmp/
 watch/
 test_video/
+web/node_modules/
+web/.next/
+web/.turbo/
+web/.cache/

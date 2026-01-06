@@ -106,6 +106,25 @@ docker run --rm -p 8000:8000 \
 - `WEB_AUTH_COOKIE`：Cookie 名称（默认 `autosub_auth`）
 - `WEB_AUTH_TTL`：登录有效期（秒，默认 `86400`）
 
+### Web UI（shadcn/ui，预览）
+新 UI 位于 `web/`，当前作为预览版本，页面骨架已完成但尚未接入正式 API。
+
+本地运行：
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Docker 运行（示例）：
+
+```bash
+docker compose up -d web
+```
+
+Legacy 的 `watcher/web.py` 仍可继续使用。
+
 上传页会为每个文件生成同名任务覆盖文件 `<name>.job.json`，可手工编辑：
 
 ```json

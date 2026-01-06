@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-sand text-ink font-sans;
+}
+
+.gradient-bg {
+  background: radial-gradient(circle at top, rgba(255, 240, 216, 0.9), #f7f4ef 60%);
+}
+
+.glass-panel {
+  background: rgba(255, 248, 239, 0.92);
+  border: 1px solid #e4d8c8;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.08);
+}
+
+.section-title {
+  @apply font-display text-2xl tracking-wide text-ember;
+}

@@ -10,3 +10,9 @@ services:
       - ./watch:/watch
       - ./output:/output
     restart: unless-stopped
+  web:
+    build: ./web
+    container_name: auto-subtitle-web
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
