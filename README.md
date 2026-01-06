@@ -268,6 +268,8 @@ docker exec <container> sh -c 'touch /watch/.scan_now'
 - `EVAL_OUTPUT_DIR`：评估样本输出目录（默认 `eval`，相对 `OUT_DIR`）
 - `EVAL_SAMPLE_RATE`：评估采样比例（默认 `1.0`）
 - `MANUAL_METADATA_DIR`：人工元数据目录（默认 `metadata`）
+- `SRT_VALIDATE`：输出 SRT 校验与修复开关（默认 `true`）
+- `SRT_AUTO_FIX`：启用 SRT 自动修复（默认 `true`）
 - `ASR_MAX_DURATION_SECONDS`：二次切片时每行最长时长（默认 `3.5` 秒）
 - `ASR_MAX_CHARS`：二次切片时每行最大字符数（默认 `25`）
 - `ASR_MIN_DURATION_SECONDS`：二次切片时每行最短时长（默认 `1.0` 秒）

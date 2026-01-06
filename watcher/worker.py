@@ -213,6 +213,8 @@ EVAL_COLLECT = os.getenv("EVAL_COLLECT", "false").lower() == "true"
 EVAL_OUTPUT_DIR = os.getenv("EVAL_OUTPUT_DIR", "eval").strip()
 EVAL_SAMPLE_RATE = float(os.getenv("EVAL_SAMPLE_RATE", "1.0"))
 MANUAL_METADATA_DIR = os.getenv("MANUAL_METADATA_DIR", "metadata").strip()
+SRT_VALIDATE = os.getenv("SRT_VALIDATE", "true").lower() == "true"
+SRT_AUTO_FIX = os.getenv("SRT_AUTO_FIX", "true").lower() == "true"
 
 SIMPLIFIED_TOKENS = (
     "zh-hans",
@@ -2685,6 +2687,40 @@ def assign_indices(segments):
     return out
 
 
+def validate_and_fix_subs(subs):
+    issues = []
+    fixed = []
+    prev_end = None
+    for sub in subs:
+        content = (sub.content or "").strip()
+        if not content:
+            issues.append("empty_content")
+            continue
+        start = sub.start
+        end = sub.end
+        if end <= start:
+            issues.append("end_before_start")
+            end = start + timedelta(milliseconds=500)
+        if start.total_seconds() < 0:
+            issues.append("negative_start")
+            start = timedelta(seconds=0)
+        if prev_end and start < prev_end:
+            issues.append("overlap")
+            duration = end - start
+            start = prev_end
+            end = start + duration
+        prev_end = end
+        fixed.append(
+            srt.Subtitle(
+                index=len(fixed) + 1,
+                start=start,
+                end=end,
+                content=content,
+            )
+        )
+    return fixed, issues
+
+
 def ms_to_srt_timestamp(ms):
     if ms < 0:
         ms = 0
@@ -3832,6 +3868,7 @@ def process_video(video_path):
     bucket = None
     vocab_id = None
 
+    stage = "init"
     try:
         log(
             "INFO",
@@ -3840,6 +3877,7 @@ def process_video(video_path):
             asr_mode=asr_mode,
             segment_mode=segment_mode,
         )
+        stage = "probe"
 
         media_info = probe_media(video_path)
         audio_cfg = AudioSelectionConfig(
@@ -3914,6 +3952,7 @@ def process_video(video_path):
         simplified_subs = []
         traditional_subs = []
         other_subs = []
+        stage = "subtitle_select"
         if subtitle_cfg.mode != "ignore":
             if selected_subtitle:
                 info = {
@@ -4017,6 +4056,7 @@ def process_video(video_path):
                 subs = None
                 srt_text = None
 
+        stage = "asr_prepare"
         if subs is None:
             if other_subs and not USE_EXISTING_SUBTITLE:
                 log("INFO", "忽略现有字幕，继续语音识别", path=video_path)
@@ -4050,6 +4090,7 @@ def process_video(video_path):
                     sample_rate=ASR_SAMPLE_RATE,
                 )
 
+        stage = "asr_call"
         if subs is None:
             if asr_mode == "realtime":
                 if hotwords and ASR_HOTWORDS_MODE == "param":
@@ -4133,6 +4174,12 @@ def process_video(video_path):
 
             if subs is None or srt_text is None:
                 raise RuntimeError("ASR 结果为空")
+            if SRT_VALIDATE:
+                fixed, issues = validate_and_fix_subs(subs)
+                if issues and SRT_AUTO_FIX:
+                    subs = fixed
+                    srt_text = srt.compose(subs)
+                    log("WARN", "SRT 修复完成", path=video_path, issues=len(issues))
             if eval_skip_main_srt:
                 log("INFO", "评估模式：跳过覆盖主 SRT", path=video_path, output=srt_path)
             else:
@@ -4140,6 +4187,7 @@ def process_video(video_path):
                     f.write(srt_text)
                 log("INFO", "识别完成并保存字幕", path=video_path, output=srt_path)
 
+        stage = "translate"
         if TRANSLATE:
             try:
                 cache = TranslateCache(CACHE_DB)
@@ -4289,6 +4337,17 @@ def process_video(video_path):
                                 use_polish=USE_POLISH,
                                 llm_client=llm_client,
                             )
+                            if SRT_VALIDATE:
+                                fixed, issues = validate_and_fix_subs(trans_subs)
+                                if issues and SRT_AUTO_FIX:
+                                    trans_subs = fixed
+                                    log(
+                                        "WARN",
+                                        "翻译 SRT 修复完成",
+                                        path=video_path,
+                                        lang=dst_lang,
+                                        issues=len(issues),
+                                    )
                             trans_text = srt.compose(trans_subs)
                             with open(trans_path, "w", encoding="utf-8") as f:
                                 f.write(trans_text)
@@ -4337,7 +4396,7 @@ def process_video(video_path):
             f.write("done")
         log("DONE", "处理完成", path=video_path, srt=srt_path)
     except Exception as exc:  # noqa: BLE001
-        log("ERROR", "处理失败", path=video_path, error=str(exc))
+        log("ERROR", "处理失败", path=video_path, error=str(exc), stage=stage)
     finally:
         remove_lock(lock_path)
         try:
