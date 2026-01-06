@@ -2064,6 +2064,12 @@ def extract_sentences(asr_result):
     if not isinstance(sentences, list):
         return []
 
+    def _first_not_none(*values):
+        for value in values:
+            if value is not None:
+                return value
+        return None
+
     normalized = []
     for item in sentences:
         if not isinstance(item, dict):
@@ -2073,13 +2079,17 @@ def extract_sentences(asr_result):
             words = []
         normalized.append(
             {
-                "begin_time": item.get("begin_time") or item.get("start_time") or item.get("start"),
-                "end_time": item.get("end_time") or item.get("end"),
+                "begin_time": _first_not_none(
+                    item.get("begin_time"), item.get("start_time"), item.get("start")
+                ),
+                "end_time": _first_not_none(item.get("end_time"), item.get("end")),
                 "text": item.get("text") or item.get("sentence") or item.get("transcription") or "",
                 "words": [
                     {
-                        "begin_time": w.get("begin_time") or w.get("start_time") or w.get("start"),
-                        "end_time": w.get("end_time") or w.get("end"),
+                        "begin_time": _first_not_none(
+                            w.get("begin_time"), w.get("start_time"), w.get("start")
+                        ),
+                        "end_time": _first_not_none(w.get("end_time"), w.get("end")),
                         "text": w.get("text") or w.get("word") or "",
                         "punctuation": w.get("punctuation") or "",
                     }
