@@ -6,6 +6,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import signal
 import threading
 import time
 import uuid
@@ -344,6 +345,9 @@ def parse_watch_dirs():
 
 
 WATCH_DIR_LIST = parse_watch_dirs()
+GLOBAL_QUEUE = None
+GLOBAL_PENDING = None
+GLOBAL_LOCK = None
 
 
 def _clean_title(text):
@@ -3765,6 +3769,14 @@ def inotify_loop(q, pending, lock):
             enqueue(path, q, pending, lock)
 
 
+def handle_scan_signal(signum, frame):
+    log("INFO", "收到扫描信号，开始立即扫描", signal=signum)
+    if GLOBAL_QUEUE is None or GLOBAL_PENDING is None or GLOBAL_LOCK is None:
+        log("WARN", "扫描信号未就绪，跳过", signal=signum)
+        return
+    scan_once(GLOBAL_QUEUE, GLOBAL_PENDING, GLOBAL_LOCK)
+
+
 if __name__ == "__main__":
     ensure_dirs()
 
@@ -3776,9 +3788,14 @@ if __name__ == "__main__":
     q = queue.Queue()
     pending = set()
     lock = threading.Lock()
+    GLOBAL_QUEUE = q
+    GLOBAL_PENDING = pending
+    GLOBAL_LOCK = lock
 
     threading.Thread(target=worker_loop, args=(q, pending, lock), daemon=True).start()
     threading.Thread(target=scan_loop, args=(q, pending, lock), daemon=True).start()
+    signal.signal(signal.SIGHUP, handle_scan_signal)
+    signal.signal(signal.SIGUSR1, handle_scan_signal)
 
     log(
         "INFO",

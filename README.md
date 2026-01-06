@@ -61,6 +61,17 @@ docker run -d \
 - `LOG_DIR`：日志文件输出目录（为空则仅输出到 stdout）
 - `LOG_FILE_NAME`：日志文件名（默认 `worker.log`）
 
+### 手动触发扫描
+
+支持通过信号立即触发一次扫描（不影响定时扫描）：
+
+```bash
+# 容器内 PID 为 1 时：
+docker kill -s HUP <container>
+# 或者
+docker kill -s USR1 <container>
+```
+
 ### DashScope 百炼
 - `DASHSCOPE_API_KEY`：必填
 - `ASR_MODEL`：默认 `paraformer-v2`
