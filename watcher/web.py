@@ -16,7 +16,7 @@ WEB_PORT = int(os.getenv("WEB_PORT", "8000"))
 WEB_CONFIG_PATH = os.getenv("WEB_CONFIG_PATH", ".env")
 WEB_SCHEMA_PATH = os.getenv("WEB_SCHEMA_PATH", ".env.example")
 WEB_TITLE = os.getenv("WEB_TITLE", "Auto Subtitle Settings")
-WEB_DB_PATH = os.getenv("WEB_DB_PATH", "/app/web.db")
+WEB_DB_PATH = os.getenv("WEB_DB_PATH", "web.db")
 WEB_UPLOAD_DIR = os.getenv("WEB_UPLOAD_DIR", "")
 WEB_UPLOAD_OVERWRITE = os.getenv("WEB_UPLOAD_OVERWRITE", "false").lower() == "true"
 WEB_MAX_UPLOAD_MB = int(os.getenv("WEB_MAX_UPLOAD_MB", "2048"))
@@ -147,8 +147,11 @@ def update_env_file(path, updates):
 
 
 def _init_db():
-    os.makedirs(os.path.dirname(WEB_DB_PATH) or ".", exist_ok=True)
-    conn = sqlite3.connect(WEB_DB_PATH)
+    try:
+        os.makedirs(os.path.dirname(WEB_DB_PATH) or ".", exist_ok=True)
+        conn = sqlite3.connect(WEB_DB_PATH)
+    except OSError:
+        return None
     conn.execute(
         "CREATE TABLE IF NOT EXISTS jobs ("
         "id TEXT PRIMARY KEY, "
@@ -163,6 +166,8 @@ def _init_db():
 def create_job(path):
     job_id = f"job-{int(time.time())}-{abs(hash(path)) % 100000}"
     conn = _init_db()
+    if conn is None:
+        return job_id
     conn.execute(
         "INSERT OR REPLACE INTO jobs (id, path, created_at) VALUES (?, ?, ?)",
         (job_id, path, int(time.time())),
@@ -174,6 +179,8 @@ def create_job(path):
 
 def list_jobs():
     conn = _init_db()
+    if conn is None:
+        return []
     cur = conn.execute("SELECT id, path, created_at FROM jobs ORDER BY created_at DESC")
     rows = cur.fetchall()
     conn.close()

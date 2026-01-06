@@ -78,7 +78,7 @@ docker run --rm -p 8000:8000 \
 - `WEB_PORT`：默认 `8000`
 - `WEB_CONFIG_PATH`：默认 `/app/.env`
 - `WEB_SCHEMA_PATH`：默认 `/app/.env.example`
-- `WEB_DB_PATH`：任务数据库路径（默认 `/app/web.db`）
+- `WEB_DB_PATH`：任务数据库路径（默认 `web.db`，容器内建议 `/app/web.db`）
 - `WEB_UPLOAD_DIR`：上传保存目录（为空则取 `WATCH_DIRS` 第一个）
 - `WEB_UPLOAD_OVERWRITE`：是否允许覆盖同名文件（默认 `false`）
 - `WEB_MAX_UPLOAD_MB`：上传大小上限（默认 `2048`）
