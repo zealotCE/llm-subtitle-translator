@@ -83,6 +83,7 @@ docker run --rm -p 8000:8000 \
 - `WEB_MAX_UPLOAD_MB`：上传大小上限（默认 `2048`）
 - `WEB_TRIGGER_SCAN_FILE`：触发扫描文件名（默认 `.scan_now`）
 - `WEB_WATCH_DIRS`：Web 专用监听目录（为空则使用 `.env` 的 `WATCH_DIRS`）
+- `WEB_LOG_LIMIT`：日志页默认展示条数（默认 `200`）
 
 ## 配置说明（环境变量）
 

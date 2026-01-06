@@ -20,6 +20,7 @@ WEB_UPLOAD_OVERWRITE = os.getenv("WEB_UPLOAD_OVERWRITE", "false").lower() == "tr
 WEB_MAX_UPLOAD_MB = int(os.getenv("WEB_MAX_UPLOAD_MB", "2048"))
 WEB_TRIGGER_SCAN_FILE = os.getenv("WEB_TRIGGER_SCAN_FILE", ".scan_now").strip()
 WEB_WATCH_DIRS = os.getenv("WEB_WATCH_DIRS", "")
+WEB_LOG_LIMIT = int(os.getenv("WEB_LOG_LIMIT", "200"))
 
 SENSITIVE_KEYS = {
     "DASHSCOPE_API_KEY",
@@ -193,6 +194,33 @@ def trigger_scan():
         except OSError:
             return False
     return True
+
+
+def get_log_path():
+    data, _entries = load_env_file(WEB_CONFIG_PATH)
+    log_dir = data.get("LOG_DIR", "") or os.getenv("LOG_DIR", "")
+    log_name = data.get("LOG_FILE_NAME", "") or os.getenv("LOG_FILE_NAME", "worker.log")
+    if not log_dir:
+        return ""
+    return os.path.join(log_dir, log_name)
+
+
+def read_logs(keyword="", limit=200):
+    path = get_log_path()
+    if not path or not os.path.exists(path):
+        return []
+    entries = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            if keyword and keyword not in line:
+                continue
+            entries.append(line)
+    if limit > 0:
+        entries = entries[-limit:]
+    return entries
 
 
 def load_schema(path):
@@ -387,6 +415,7 @@ def render_page(values, sections, message=""):
       <a href="/">设置</a>
       <a href="/upload">上传</a>
       <a href="/jobs">任务</a>
+      <a href="/logs">日志</a>
     </nav>
     {notice}
     <form method="post">
@@ -439,6 +468,7 @@ def render_jobs(jobs, message=""):
       <a href="/">设置</a>
       <a href="/upload">上传</a>
       <a href="/jobs">任务</a>
+      <a href="/logs">日志</a>
     </nav>
     <h1>任务列表</h1>
     {notice}
@@ -483,6 +513,7 @@ def render_upload(message=""):
       <a href="/">设置</a>
       <a href="/upload">上传</a>
       <a href="/jobs">任务</a>
+      <a href="/logs">日志</a>
     </nav>
     <h1>上传媒体</h1>
     {notice}
@@ -490,6 +521,53 @@ def render_upload(message=""):
       <input type="file" name="file" />
       <button type="submit">上传并创建任务</button>
     </form>
+  </main>
+</body>
+</html>
+"""
+
+
+def render_logs(logs, keyword="", limit=200):
+    rows = []
+    for line in logs:
+        rows.append(f"<tr><td>{html.escape(line)}</td></tr>")
+    rows_html = "\n".join(rows) if rows else "<tr><td>暂无日志</td></tr>"
+    return f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>日志</title>
+  <style>
+    body {{ font-family: "IBM Plex Serif", serif; background: #f7f4ef; color: #1f1c18; }}
+    main {{ max-width: 1100px; margin: 0 auto; padding: 24px; }}
+    table {{ width: 100%; border-collapse: collapse; background: #fff8ef; }}
+    td {{ border: 1px solid #e4d8c8; padding: 10px; font-size: 12px; }}
+    nav a {{ margin-right: 12px; color: #c65d31; text-decoration: none; }}
+    form {{ margin-bottom: 12px; }}
+    input {{ padding: 8px 10px; border-radius: 8px; border: 1px solid #e4d8c8; }}
+    button {{ border: none; border-radius: 999px; padding: 8px 16px; background: #c65d31; color: #fff; }}
+  </style>
+</head>
+<body>
+  <main>
+    <nav>
+      <a href="/">设置</a>
+      <a href="/upload">上传</a>
+      <a href="/jobs">任务</a>
+      <a href="/logs">日志</a>
+    </nav>
+    <h1>日志</h1>
+    <form method="get">
+      <input name="q" placeholder="关键词" value="{html.escape(keyword)}" />
+      <input name="limit" placeholder="条数" value="{html.escape(str(limit))}" />
+      <button type="submit">筛选</button>
+    </form>
+    <table>
+      <tbody>
+        {rows_html}
+      </tbody>
+    </table>
   </main>
 </body>
 </html>
@@ -514,6 +592,8 @@ class SettingsHandler(BaseHTTPRequestHandler):
         if path == "/upload":
             page = render_upload()
             return self._send_html(page)
+        if path == "/logs":
+            return self._handle_logs()
         values, _entries = load_env_file(WEB_CONFIG_PATH)
         sections = load_schema(WEB_SCHEMA_PATH)
         page = render_page(values, sections)
@@ -528,6 +608,8 @@ class SettingsHandler(BaseHTTPRequestHandler):
             jobs = list_jobs()
             page = render_jobs(jobs, message="已触发扫描" if ok else "触发失败")
             return self._send_html(page)
+        if path == "/logs":
+            return self._handle_logs(post=True)
         length = int(self.headers.get("Content-Length", 0))
         data = self.rfile.read(length).decode("utf-8")
         params = parse_qs(data, keep_blank_values=True)
@@ -578,6 +660,22 @@ class SettingsHandler(BaseHTTPRequestHandler):
             f.write(file_item.file.read())
         job_id = create_job(dest_path)
         return self._send_html(render_upload(f"上传成功，任务 {job_id} 已创建"))
+
+    def _handle_logs(self, post=False):
+        if post:
+            length = int(self.headers.get("Content-Length", 0))
+            data = self.rfile.read(length).decode("utf-8")
+            params = parse_qs(data, keep_blank_values=True)
+        else:
+            params = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+        keyword = (params.get("q") or [""])[0].strip()
+        limit_raw = (params.get("limit") or [""])[0].strip()
+        limit = WEB_LOG_LIMIT
+        if limit_raw.isdigit():
+            limit = max(1, min(1000, int(limit_raw)))
+        logs = read_logs(keyword=keyword, limit=limit)
+        page = render_logs(logs, keyword=keyword, limit=limit)
+        return self._send_html(page)
 
     def log_message(self, format, *args):
         return None

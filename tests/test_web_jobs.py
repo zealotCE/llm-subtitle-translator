@@ -25,3 +25,15 @@ def test_trigger_scan(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "WEB_WATCH_DIRS", str(watch_dir))
     assert web.trigger_scan() is True
     assert (watch_dir / ".scan_now").exists()
+
+
+def test_read_logs(tmp_path, monkeypatch):
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    log_file = log_dir / "worker.log"
+    log_file.write_text('{"level":"INFO","msg":"hello"}\n', encoding="utf-8")
+    env_path = tmp_path / ".env"
+    env_path.write_text("LOG_DIR={}\nLOG_FILE_NAME=worker.log\n".format(log_dir), encoding="utf-8")
+    monkeypatch.setattr(web, "WEB_CONFIG_PATH", str(env_path))
+    logs = web.read_logs(limit=10)
+    assert logs and "hello" in logs[0]
