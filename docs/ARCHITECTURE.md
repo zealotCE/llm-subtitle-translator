@@ -49,6 +49,7 @@ Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 
 - 使用 `inotifywait` 监听写入完成与移动事件
 - 定时扫描 `WATCH_DIRS` 兜底补处理
+- 支持触发文件（`TRIGGER_SCAN_FILE`）与信号触发即时扫描
 - `.lock` 控制并发与重复处理，支持过期清理
 
 ### 2. 媒体探测与选择
@@ -110,4 +111,3 @@ Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 - 新增元数据源：实现 `WorkMetadataProvider`
 - 新增评估脚本：对齐与质量评分
 - 新增术语抽取：多字幕轨对齐 → 术语表
-

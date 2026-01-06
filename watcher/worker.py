@@ -453,7 +453,7 @@ def _parse_nfo_file(path):
 
     year = _nfo_text(root, "year") or _nfo_text(root, "premiered") or _nfo_text(root, "firstaired")
     if year:
-        match = re.search(r"(19|20)\\d{2}", year)
+        match = re.search(r"(19|20)\d{2}", year)
         if match:
             info["year"] = int(match.group(0))
 
@@ -1443,7 +1443,7 @@ def resolve_title_aliases(title, alias_map):
 def _extract_year(date_value):
     if not date_value:
         return None
-    match = re.search(r"(19|20)\\d{2}", str(date_value))
+    match = re.search(r"(19|20)\d{2}", str(date_value))
     if not match:
         return None
     return int(match.group(0))
@@ -1499,7 +1499,7 @@ def _build_work_query(
     guessed_season = int(work_info.season) if work_info and work_info.season else None
     guessed_episode = int(work_info.episode) if work_info and work_info.episode else None
     guessed_year = None
-    year_match = re.search(r"(19|20)\\d{2}", raw_file_name)
+    year_match = re.search(r"(19|20)\d{2}", raw_file_name)
     if year_match:
         guessed_year = int(year_match.group(0))
     guessed_type = _guess_type_from_path(video_path)
@@ -3540,7 +3540,7 @@ def process_video(video_path):
                             season=season,
                             episode=episode,
                             confidence=max(work_info.confidence, 0.6),
-                            source=f\"{work_info.source}+nfo\",
+                            source=f"{work_info.source}+nfo",
                         )
                 raw_glossary = load_glossary_from_yaml(GLOSSARY_PATH)
                 glossary = build_effective_glossary(
