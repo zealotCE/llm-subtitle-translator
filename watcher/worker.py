@@ -3314,6 +3314,7 @@ def process_video(video_path):
     tmp_srt = None
     object_key = None
     bucket = None
+    vocab_id = None
 
     try:
         log("INFO", "开始处理", path=video_path)
