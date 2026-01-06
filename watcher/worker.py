@@ -2896,7 +2896,8 @@ def translate_via_llm(
 
     def build_context_block(item):
         if isinstance(item, str):
-            return f"【当前行】:\n{item.replace('<br>', '\\n')}"
+            cleaned = item.replace("<br>", "\n")
+            return f"【当前行】:\n{cleaned}"
         full_text = item.get("full_text", "").replace("<br>", "\n")
         prev_text = item.get("prev_text", "").replace("<br>", "\n")
         cur_text = item.get("cur_text", "").replace("<br>", "\n")
