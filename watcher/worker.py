@@ -13,7 +13,7 @@ import uuid
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from dataclasses import dataclass
 from typing import Callable, Dict, List, NamedTuple, Optional
@@ -725,7 +725,7 @@ def detect_work_info(path, sample_lines, llm_client=None):
 
 def log(level, message, **kwargs):
     record = {
-        "ts": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "level": level,
         "message": message,
     }

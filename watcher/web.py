@@ -1,4 +1,3 @@
-import cgi
 import html
 import json
 import os
@@ -6,6 +5,8 @@ import re
 import sqlite3
 import tempfile
 import time
+from email import policy
+from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -682,11 +683,30 @@ class SettingsHandler(BaseHTTPRequestHandler):
 
     def _handle_upload(self):
         max_bytes = WEB_MAX_UPLOAD_MB * 1024 * 1024
-        if int(self.headers.get("Content-Length", 0)) > max_bytes:
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > max_bytes:
             return self._send_html(render_upload("文件过大"), status=413)
-        form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={"REQUEST_METHOD": "POST"})
-        file_item = form["file"] if "file" in form else None
-        if not file_item or not file_item.filename:
+        content_type = self.headers.get("Content-Type", "")
+        if "multipart/form-data" not in content_type:
+            asr_mode, segment_mode = get_upload_defaults()
+            return self._send_html(render_upload("不支持的上传类型", asr_mode, segment_mode), status=400)
+        raw = self.rfile.read(content_length)
+        header = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8")
+        message = BytesParser(policy=policy.default).parsebytes(header + raw)
+        file_info = None
+        fields = {}
+        for part in message.iter_parts():
+            disp = part.get("Content-Disposition", "")
+            if "form-data" not in disp:
+                continue
+            name = part.get_param("name", header="content-disposition")
+            filename = part.get_filename()
+            if filename:
+                payload = part.get_payload(decode=True) or b""
+                file_info = (filename, payload)
+            elif name:
+                fields[name] = part.get_content()
+        if not file_info:
             asr_mode, segment_mode = get_upload_defaults()
             return self._send_html(render_upload("请选择文件", asr_mode, segment_mode))
 
@@ -696,15 +716,15 @@ class SettingsHandler(BaseHTTPRequestHandler):
             asr_mode, segment_mode = get_upload_defaults()
             return self._send_html(render_upload("未配置上传目录", asr_mode, segment_mode))
         os.makedirs(target_dir, exist_ok=True)
-        filename = os.path.basename(file_item.filename)
+        filename = os.path.basename(file_info[0])
         dest_path = os.path.join(target_dir, filename)
         if os.path.exists(dest_path) and not WEB_UPLOAD_OVERWRITE:
             asr_mode, segment_mode = get_upload_defaults()
             return self._send_html(render_upload("文件已存在", asr_mode, segment_mode))
         with open(dest_path, "wb") as f:
-            f.write(file_item.file.read())
-        asr_mode = (form.getvalue("asr_mode") or get_upload_defaults()[0]).strip()
-        segment_mode = (form.getvalue("segment_mode") or get_upload_defaults()[1]).strip()
+            f.write(file_info[1])
+        asr_mode = (fields.get("asr_mode") or get_upload_defaults()[0]).strip()
+        segment_mode = (fields.get("segment_mode") or get_upload_defaults()[1]).strip()
         meta_path = os.path.join(
             target_dir,
             f"{os.path.splitext(filename)[0]}.job.json",
