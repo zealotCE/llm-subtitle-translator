@@ -48,6 +48,14 @@ docker run -d \
   ghcr.io/<owner>/<repo>:latest
 ```
 
+也可以直接用 `docker-compose.yml`（默认已指向 GHCR 镜像）：
+
+```bash
+# 拉取并启动
+docker compose pull
+docker compose up -d
+```
+
 ## 配置说明（环境变量）
 
 ### Watch/Output

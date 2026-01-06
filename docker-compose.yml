@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   watcher:
-    build: ./watcher
+    image: ghcr.io/zealotce/llm-subtitle-translator:latest
     container_name: auto-subtitle-watcher
     env_file:
       - .env
