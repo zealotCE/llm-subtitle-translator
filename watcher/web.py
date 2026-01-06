@@ -33,9 +33,12 @@ WEB_MEDIA_RECURSIVE = os.getenv("WEB_MEDIA_RECURSIVE", "true").lower() == "true"
 WEB_ARCHIVE_DIR = os.getenv("WEB_ARCHIVE_DIR", "")
 WEB_ALLOW_DELETE = os.getenv("WEB_ALLOW_DELETE", "false").lower() == "true"
 WEB_METADATA_DIR = os.getenv("WEB_METADATA_DIR", "metadata")
+WEB_MEDIA_SCAN_INTERVAL = int(os.getenv("WEB_MEDIA_SCAN_INTERVAL", "0"))
+WEB_TRIGGER_SCAN_INTERVAL = int(os.getenv("WEB_TRIGGER_SCAN_INTERVAL", "0"))
 
 _wal_lock = threading.Lock()
 _wal_counter = 0
+_last_media_scan = 0
 
 VIDEO_EXTS = {".mp4", ".mkv", ".webm", ".mov", ".avi"}
 
@@ -463,6 +466,34 @@ def scan_media():
                 if upsert_media(path):
                     count += 1
     return count
+
+
+def _media_scan_loop():
+    global _last_media_scan
+    interval = WEB_MEDIA_SCAN_INTERVAL
+    if interval <= 0:
+        return
+    while True:
+        try:
+            count = scan_media()
+            _last_media_scan = int(time.time())
+            if count:
+                print(f"[web] media scan updated {count} files", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[web] media scan failed: {exc}", flush=True)
+        time.sleep(interval)
+
+
+def _trigger_scan_loop():
+    interval = WEB_TRIGGER_SCAN_INTERVAL
+    if interval <= 0:
+        return
+    while True:
+        try:
+            trigger_scan()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[web] trigger scan failed: {exc}", flush=True)
+        time.sleep(interval)
 
 
 def infer_job_status(path):
@@ -967,6 +998,11 @@ def render_subtitle_editor(video_path, subtitle_path, content, candidates, messa
 
 
 def render_media(media_rows, message=""):
+    last_scan = (
+        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(_last_media_scan))
+        if _last_media_scan
+        else "未扫描"
+    )
     rows = []
     for path, size, mtime, archived, label in media_rows:
         status = "archived" if archived else "active"
@@ -1029,6 +1065,7 @@ def render_media(media_rows, message=""):
     <h1>媒体库</h1>
     {notice}
     <div class="actions">
+      <div style="display:inline-block;margin-right:12px;color:#6f655a;">最近扫描：{html.escape(last_scan)}</div>
       <form method="post" style="display:inline">
         <input type="hidden" name="action" value="scan"/>
         <button type="submit">扫描媒体</button>
@@ -1412,6 +1449,10 @@ class SettingsHandler(BaseHTTPRequestHandler):
 def main():
     server = ThreadingHTTPServer((WEB_HOST, WEB_PORT), SettingsHandler)
     print(f"[web] listening on http://{WEB_HOST}:{WEB_PORT}")
+    if WEB_MEDIA_SCAN_INTERVAL > 0:
+        threading.Thread(target=_media_scan_loop, daemon=True).start()
+    if WEB_TRIGGER_SCAN_INTERVAL > 0:
+        threading.Thread(target=_trigger_scan_loop, daemon=True).start()
     server.serve_forever()
 
 
