@@ -28,6 +28,7 @@
 - 任务列表（队列/处理中/失败/完成）
 - 任务详情：日志、产物、错误信息
 - 支持重试/取消/删除任务
+- 手动触发扫描/任务（Web 入口）
 
 ### C. 字幕查看与编辑
 - SRT 预览
@@ -58,6 +59,8 @@
 - `Job`
   - `id, status, asr_mode, segment_mode, src_lang, dst_langs, created_at, updated_at`
   - `input_path, media_id, error, logs`
+  - `trigger_source`：`inotify|scan|web`
+  - `log_path`：指向 JSON Lines 日志
 
 - `Media`
   - `id, filename, size, duration, audio_tracks, subtitle_tracks, labels, archived`
@@ -77,6 +80,7 @@
 - `services/`：任务执行、字幕处理、元数据
 - `storage/`：文件与 DB 接口
 - `workers/`：异步任务队列（可先用本地线程 + 任务表）
+- `logs/`：日志落盘与检索接口（可读 LOG_DIR）
 
 ## API 草案（简版）
 
@@ -84,12 +88,14 @@
 - `GET /api/jobs`：任务列表
 - `GET /api/jobs/{id}`：任务详情
 - `POST /api/jobs/{id}/retry`：重试
+- `POST /api/scan`：手动触发一次扫描
 - `GET /api/media`：媒体列表
 - `GET /api/media/{id}`：媒体详情
 - `GET /api/subtitles/{id}`：字幕内容
 - `PUT /api/subtitles/{id}`：字幕编辑保存
 - `GET /api/config` / `PUT /api/config`
 - `POST /api/metadata/resolve`：人工确认元数据
+- `GET /api/logs`：按 `job_id` / `path` 查询日志
 
 ## 前端页面
 
@@ -105,6 +111,7 @@
 ### M1：Web + 任务队列（最小可用）
 - 上传 → 任务 → 结果下载
 - 只读字幕预览
+- 任务与日志可视化（自动触发任务也入库）
 
 ### M2：字幕编辑 + 版本历史
 - 基本编辑、合并/拆分
