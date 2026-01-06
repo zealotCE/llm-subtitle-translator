@@ -111,3 +111,18 @@ Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 - 新增元数据源：实现 `WorkMetadataProvider`
 - 新增评估脚本：对齐与质量评分
 - 新增术语抽取：多字幕轨对齐 → 术语表
+
+## 未来规划：实时 ASR 路径
+
+为支持长视频的实时识别，计划引入 FunASR Realtime（Paraformer/FunASR 实时 SDK），与现有离线 OSS 流程并行。
+
+配置方向（拟）：
+
+- `ASR_MODE`：`offline`（现有 OSS + Paraformer）/`realtime`（实时 SDK）
+- `SEGMENT_MODE`：`auto`（实时断句）/`post`（我们的二次切片）
+- `LANGUAGE_HINTS`：沿用当前语言提示参数
+
+行为约束：
+
+- 长视频也支持实时 ASR（分片/流式）
+- 实时 ASR 失败不自动回退到离线模式，由用户手动切换
