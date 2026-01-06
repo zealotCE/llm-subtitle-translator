@@ -825,7 +825,19 @@ def render_page(values, sections, message=""):
 """
 
 
-def render_jobs(jobs, message=""):
+def render_jobs(jobs, message="", keyword=""):
+    search_form = (
+        "<form method=\"get\" style=\"margin-bottom: 12px;\">"
+        f"<input name=\"q\" placeholder=\"搜索路径\" value=\"{html.escape(keyword)}\" />"
+        "<button type=\"submit\">搜索</button>"
+        "</form>"
+    )
+    search_form = (
+        "<form method=\"get\" style=\"margin-bottom: 12px;\">"
+        "<input name=\"q\" placeholder=\"搜索路径\" />"
+        "<button type=\"submit\">搜索</button>"
+        "</form>"
+    )
     rows = []
     for job_id, path, created_at in jobs:
         status = infer_job_status(path)
@@ -875,6 +887,7 @@ def render_jobs(jobs, message=""):
     </nav>
     <h1>任务列表</h1>
     {notice}
+    {search_form}
     <form method="post" action="/scan" style="margin-bottom: 12px;">
       <button type="submit">触发扫描</button>
     </form>
@@ -1085,7 +1098,7 @@ def render_subtitle_editor(video_path, subtitle_path, content, candidates, messa
 """
 
 
-def render_media(media_rows, message=""):
+def render_media(media_rows, message="", keyword=""):
     last_scan = (
         time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(_last_media_scan))
         if _last_media_scan
@@ -1157,6 +1170,10 @@ def render_media(media_rows, message=""):
       <form method="post" style="display:inline">
         <input type="hidden" name="action" value="scan"/>
         <button type="submit">扫描媒体</button>
+      </form>
+      <form method="get" style="display:inline;margin-left:12px;">
+        <input name="q" placeholder="搜索路径" value="{html.escape(keyword)}" />
+        <button type="submit">搜索</button>
       </form>
       <a style="margin-left:12px;" href="/export/media?format=json">导出 JSON</a>
       <a style="margin-left:6px;" href="/export/media?format=csv">导出 CSV</a>
@@ -1282,8 +1299,11 @@ class SettingsHandler(BaseHTTPRequestHandler):
         if self._require_auth():
             return
         if path == "/jobs":
+            keyword = (parse_qs(parsed.query).get("q") or [""])[0].strip()
             jobs = list_jobs()
-            page = render_jobs(jobs)
+            if keyword:
+                jobs = [job for job in jobs if keyword in job[1]]
+            page = render_jobs(jobs, keyword=keyword)
             return self._send_html(page)
         if path == "/upload":
             asr_mode, segment_mode = get_upload_defaults()
@@ -1294,8 +1314,11 @@ class SettingsHandler(BaseHTTPRequestHandler):
         if path == "/subtitle":
             return self._handle_subtitle()
         if path == "/media":
+            keyword = (parse_qs(parsed.query).get("q") or [""])[0].strip()
             rows = list_media()
-            return self._send_html(render_media(rows))
+            if keyword:
+                rows = [row for row in rows if keyword in row[0]]
+            return self._send_html(render_media(rows, keyword=keyword))
         if path == "/metadata":
             return self._handle_metadata()
         if path == "/export/logs":
