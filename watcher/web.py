@@ -5,6 +5,9 @@ import re
 import sqlite3
 import tempfile
 import time
+import base64
+import hmac
+import hashlib
 from email import policy
 from email.parser import BytesParser
 import threading
@@ -35,6 +38,12 @@ WEB_ALLOW_DELETE = os.getenv("WEB_ALLOW_DELETE", "false").lower() == "true"
 WEB_METADATA_DIR = os.getenv("WEB_METADATA_DIR", "metadata")
 WEB_MEDIA_SCAN_INTERVAL = int(os.getenv("WEB_MEDIA_SCAN_INTERVAL", "0"))
 WEB_TRIGGER_SCAN_INTERVAL = int(os.getenv("WEB_TRIGGER_SCAN_INTERVAL", "0"))
+WEB_AUTH_ENABLED = os.getenv("WEB_AUTH_ENABLED", "false").lower() == "true"
+WEB_AUTH_USER = os.getenv("WEB_AUTH_USER", "admin")
+WEB_AUTH_PASSWORD = os.getenv("WEB_AUTH_PASSWORD", "")
+WEB_AUTH_SECRET = os.getenv("WEB_AUTH_SECRET", "change-me")
+WEB_AUTH_COOKIE = os.getenv("WEB_AUTH_COOKIE", "autosub_auth")
+WEB_AUTH_TTL = int(os.getenv("WEB_AUTH_TTL", "86400"))
 
 _wal_lock = threading.Lock()
 _wal_counter = 0
@@ -69,6 +78,40 @@ def _unquote_env_value(value):
             raw = raw.replace("\\\\", "\\").replace('\\"', '"')
         return raw
     return value
+
+
+def _sign_token(payload, secret):
+    return hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def build_auth_token(username):
+    exp = int(time.time()) + max(60, WEB_AUTH_TTL)
+    payload = f"{username}|{exp}"
+    sig = _sign_token(payload, WEB_AUTH_SECRET)
+    token_raw = f"{payload}|{sig}"
+    return base64.urlsafe_b64encode(token_raw.encode("utf-8")).decode("utf-8")
+
+
+def verify_auth_token(token):
+    try:
+        raw = base64.urlsafe_b64decode(token.encode("utf-8")).decode("utf-8")
+    except Exception:  # noqa: BLE001
+        return False
+    parts = raw.split("|")
+    if len(parts) != 3:
+        return False
+    username, exp_str, sig = parts
+    payload = f"{username}|{exp_str}"
+    expected = _sign_token(payload, WEB_AUTH_SECRET)
+    if not hmac.compare_digest(sig, expected):
+        return False
+    try:
+        exp = int(exp_str)
+    except ValueError:
+        return False
+    if exp < int(time.time()):
+        return False
+    return username == WEB_AUTH_USER
 
 
 def _format_env_value(value):
@@ -766,6 +809,7 @@ def render_page(values, sections, message=""):
       <a href="/jobs">任务</a>
       <a href="/logs">日志</a>
       <a href="/media">媒体库</a>
+      <a href="/logout">退出</a>
     </nav>
     {notice}
     <form method="post">
@@ -827,6 +871,7 @@ def render_jobs(jobs, message=""):
       <a href="/jobs">任务</a>
       <a href="/logs">日志</a>
       <a href="/media">媒体库</a>
+      <a href="/logout">退出</a>
     </nav>
     <h1>任务列表</h1>
     {notice}
@@ -874,6 +919,7 @@ def render_upload(message="", asr_mode="", segment_mode=""):
       <a href="/jobs">任务</a>
       <a href="/logs">日志</a>
       <a href="/media">媒体库</a>
+      <a href="/logout">退出</a>
     </nav>
     <h1>上传媒体</h1>
     {notice}
@@ -890,6 +936,40 @@ def render_upload(message="", asr_mode="", segment_mode=""):
       </select>
       <input type="file" name="file" />
       <button type="submit">上传并创建任务</button>
+    </form>
+  </main>
+</body>
+</html>
+"""
+
+
+def render_login(message=""):
+    notice = f"<div class='notice'>{html.escape(message)}</div>" if message else ""
+    return f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>登录</title>
+  <style>
+    body {{ font-family: "IBM Plex Serif", serif; background: #f7f4ef; color: #1f1c18; }}
+    main {{ max-width: 520px; margin: 0 auto; padding: 48px 24px; }}
+    form {{ background: #fff8ef; padding: 18px; border: 1px solid #e4d8c8; border-radius: 14px; display: grid; gap: 10px; }}
+    input {{ padding: 8px 10px; border-radius: 8px; border: 1px solid #e4d8c8; }}
+    button {{ border: none; border-radius: 999px; padding: 8px 16px; background: #c65d31; color: #fff; }}
+    .notice {{ background: #fff1d9; border: 1px solid #e4d8c8; padding: 10px 12px; border-radius: 10px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>登录</h1>
+    {notice}
+    <form method="post" action="/login">
+      <label>用户名</label>
+      <input name="username" />
+      <label>密码</label>
+      <input name="password" type="password" />
+      <button type="submit">登录</button>
     </form>
   </main>
 </body>
@@ -927,6 +1007,7 @@ def render_logs(logs, keyword="", limit=200):
       <a href="/jobs">任务</a>
       <a href="/logs">日志</a>
       <a href="/media">媒体库</a>
+      <a href="/logout">退出</a>
     </nav>
     <h1>日志</h1>
     <form method="get">
@@ -978,6 +1059,7 @@ def render_subtitle_editor(video_path, subtitle_path, content, candidates, messa
       <a href="/jobs">任务</a>
       <a href="/logs">日志</a>
       <a href="/media">媒体库</a>
+      <a href="/logout">退出</a>
     </nav>
     <h1>字幕编辑</h1>
     {notice}
@@ -1155,9 +1237,42 @@ class SettingsHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _redirect(self, location):
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.end_headers()
+
+    def _get_cookie(self):
+        cookie = self.headers.get("Cookie", "")
+        for item in cookie.split(";"):
+            item = item.strip()
+            if not item:
+                continue
+            if item.startswith(WEB_AUTH_COOKIE + "="):
+                return item.split("=", 1)[1]
+        return ""
+
+    def _is_authed(self):
+        if not WEB_AUTH_ENABLED:
+            return True
+        token = self._get_cookie()
+        if not token:
+            return False
+        return verify_auth_token(token)
+
+    def _require_auth(self):
+        if self._is_authed():
+            return False
+        self._send_html(render_login("请先登录"), status=401)
+        return True
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
+        if path == "/login":
+            return self._send_html(render_login())
+        if self._require_auth():
+            return
         if path == "/jobs":
             jobs = list_jobs()
             page = render_jobs(jobs)
@@ -1182,6 +1297,28 @@ class SettingsHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == "/login":
+            length = int(self.headers.get("Content-Length", 0))
+            data = self.rfile.read(length).decode("utf-8")
+            params = parse_qs(data, keep_blank_values=True)
+            username = (params.get("username") or [""])[0]
+            password = (params.get("password") or [""])[0]
+            if username == WEB_AUTH_USER and password == WEB_AUTH_PASSWORD:
+                token = build_auth_token(username)
+                self.send_response(302)
+                self.send_header("Set-Cookie", f"{WEB_AUTH_COOKIE}={token}; HttpOnly; Path=/")
+                self.send_header("Location", "/")
+                self.end_headers()
+                return
+            return self._send_html(render_login("用户名或密码错误"), status=401)
+        if path == "/logout":
+            self.send_response(302)
+            self.send_header("Set-Cookie", f"{WEB_AUTH_COOKIE}=; Max-Age=0; Path=/")
+            self.send_header("Location", "/login")
+            self.end_headers()
+            return
+        if self._require_auth():
+            return
         if path == "/upload":
             return self._handle_upload()
         if path == "/scan":

@@ -98,6 +98,12 @@ docker run --rm -p 8000:8000 \
 - `WEB_METADATA_DIR`：人工元数据保存目录（默认 `metadata`）
 - `WEB_MEDIA_SCAN_INTERVAL`：媒体库定时扫描间隔（秒，默认 `0` 不启用）
 - `WEB_TRIGGER_SCAN_INTERVAL`：定时触发 worker 扫描间隔（秒，默认 `0` 不启用）
+- `WEB_AUTH_ENABLED`：是否启用登录保护（默认 `false`）
+- `WEB_AUTH_USER`：登录用户名（默认 `admin`）
+- `WEB_AUTH_PASSWORD`：登录密码（默认空）
+- `WEB_AUTH_SECRET`：签名密钥（默认 `change-me`）
+- `WEB_AUTH_COOKIE`：Cookie 名称（默认 `autosub_auth`）
+- `WEB_AUTH_TTL`：登录有效期（秒，默认 `86400`）
 
 上传页会为每个文件生成同名任务覆盖文件 `<name>.job.json`，可手工编辑：
 
