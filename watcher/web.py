@@ -1,9 +1,12 @@
+import cgi
 import html
 import os
 import re
+import sqlite3
 import tempfile
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 
 
 WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
@@ -11,6 +14,12 @@ WEB_PORT = int(os.getenv("WEB_PORT", "8000"))
 WEB_CONFIG_PATH = os.getenv("WEB_CONFIG_PATH", ".env")
 WEB_SCHEMA_PATH = os.getenv("WEB_SCHEMA_PATH", ".env.example")
 WEB_TITLE = os.getenv("WEB_TITLE", "Auto Subtitle Settings")
+WEB_DB_PATH = os.getenv("WEB_DB_PATH", "/app/web.db")
+WEB_UPLOAD_DIR = os.getenv("WEB_UPLOAD_DIR", "")
+WEB_UPLOAD_OVERWRITE = os.getenv("WEB_UPLOAD_OVERWRITE", "false").lower() == "true"
+WEB_MAX_UPLOAD_MB = int(os.getenv("WEB_MAX_UPLOAD_MB", "2048"))
+WEB_TRIGGER_SCAN_FILE = os.getenv("WEB_TRIGGER_SCAN_FILE", ".scan_now").strip()
+WEB_WATCH_DIRS = os.getenv("WEB_WATCH_DIRS", "")
 
 SENSITIVE_KEYS = {
     "DASHSCOPE_API_KEY",
@@ -85,6 +94,21 @@ def load_env_file(path):
     return data, entries
 
 
+def get_watch_dirs():
+    if WEB_WATCH_DIRS.strip():
+        raw = WEB_WATCH_DIRS
+    else:
+        data, _entries = load_env_file(WEB_CONFIG_PATH)
+        raw = data.get("WATCH_DIRS", "")
+    items = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        items.append(_unquote_env_value(part))
+    return items
+
+
 def update_env_file(path, updates):
     data, entries = load_env_file(path)
     data.update(updates)
@@ -108,6 +132,67 @@ def update_env_file(path, updates):
         tmp.write(content)
         tmp_path = tmp.name
     os.replace(tmp_path, path)
+
+
+def _init_db():
+    os.makedirs(os.path.dirname(WEB_DB_PATH) or ".", exist_ok=True)
+    conn = sqlite3.connect(WEB_DB_PATH)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS jobs ("
+        "id TEXT PRIMARY KEY, "
+        "path TEXT NOT NULL, "
+        "created_at INTEGER NOT NULL"
+        ")"
+    )
+    conn.commit()
+    return conn
+
+
+def create_job(path):
+    job_id = f"job-{int(time.time())}-{abs(hash(path)) % 100000}"
+    conn = _init_db()
+    conn.execute(
+        "INSERT OR REPLACE INTO jobs (id, path, created_at) VALUES (?, ?, ?)",
+        (job_id, path, int(time.time())),
+    )
+    conn.commit()
+    conn.close()
+    return job_id
+
+
+def list_jobs():
+    conn = _init_db()
+    cur = conn.execute("SELECT id, path, created_at FROM jobs ORDER BY created_at DESC")
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def infer_job_status(path):
+    base = os.path.splitext(os.path.basename(path))[0]
+    out_dir = os.path.dirname(path)
+    done_path = os.path.join(out_dir, f"{base}.done")
+    lock_path = os.path.join(out_dir, f"{base}.lock")
+    if os.path.exists(done_path):
+        return "done"
+    if os.path.exists(lock_path):
+        return "running"
+    return "pending"
+
+
+def trigger_scan():
+    watch_dirs = get_watch_dirs()
+    if not watch_dirs or not WEB_TRIGGER_SCAN_FILE:
+        return False
+    for base in watch_dirs:
+        os.makedirs(base, exist_ok=True)
+        path = os.path.join(base, WEB_TRIGGER_SCAN_FILE)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("scan")
+        except OSError:
+            return False
+    return True
 
 
 def load_schema(path):
@@ -273,6 +358,12 @@ def render_page(values, sections, message=""):
       margin-bottom: 16px;
       color: #7a4a2a;
     }}
+    nav a {{
+      margin-right: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }}
     footer {{
       text-align: center;
       color: var(--muted);
@@ -292,6 +383,11 @@ def render_page(values, sections, message=""):
     <p>修改配置后需要重启服务才会生效。</p>
   </header>
   <main>
+    <nav>
+      <a href="/">设置</a>
+      <a href="/upload">上传</a>
+      <a href="/jobs">任务</a>
+    </nav>
     {notice}
     <form method="post">
       {''.join(blocks)}
@@ -301,6 +397,100 @@ def render_page(values, sections, message=""):
     </form>
   </main>
   <footer>配置文件：{html.escape(WEB_CONFIG_PATH)}</footer>
+</body>
+</html>
+"""
+
+
+def render_jobs(jobs, message=""):
+    rows = []
+    for job_id, path, created_at in jobs:
+        status = infer_job_status(path)
+        created = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(created_at))
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(job_id)}</td>"
+            f"<td>{html.escape(path)}</td>"
+            f"<td>{html.escape(status)}</td>"
+            f"<td>{html.escape(created)}</td>"
+            "</tr>"
+        )
+    notice = f"<div class='notice'>{html.escape(message)}</div>" if message else ""
+    rows_html = "\n".join(rows) if rows else "<tr><td colspan='4'>暂无任务</td></tr>"
+    return f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>任务列表</title>
+  <style>
+    body {{ font-family: "IBM Plex Serif", serif; background: #f7f4ef; color: #1f1c18; }}
+    main {{ max-width: 1100px; margin: 0 auto; padding: 24px; }}
+    table {{ width: 100%; border-collapse: collapse; background: #fff8ef; }}
+    th, td {{ border: 1px solid #e4d8c8; padding: 10px; text-align: left; }}
+    th {{ background: #f0e2d2; }}
+    .notice {{ background: #fff1d9; border: 1px solid #e4d8c8; padding: 10px 12px; border-radius: 10px; }}
+    nav a {{ margin-right: 12px; color: #c65d31; text-decoration: none; }}
+  </style>
+</head>
+<body>
+  <main>
+    <nav>
+      <a href="/">设置</a>
+      <a href="/upload">上传</a>
+      <a href="/jobs">任务</a>
+    </nav>
+    <h1>任务列表</h1>
+    {notice}
+    <form method="post" action="/scan" style="margin-bottom: 12px;">
+      <button type="submit">触发扫描</button>
+    </form>
+    <table>
+      <thead>
+        <tr><th>任务 ID</th><th>路径</th><th>状态</th><th>创建时间</th></tr>
+      </thead>
+      <tbody>
+        {rows_html}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
+"""
+
+
+def render_upload(message=""):
+    notice = f"<div class='notice'>{html.escape(message)}</div>" if message else ""
+    return f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>上传媒体</title>
+  <style>
+    body {{ font-family: "IBM Plex Serif", serif; background: #f7f4ef; color: #1f1c18; }}
+    main {{ max-width: 760px; margin: 0 auto; padding: 24px; }}
+    form {{ background: #fff8ef; padding: 18px; border: 1px solid #e4d8c8; border-radius: 14px; }}
+    nav a {{ margin-right: 12px; color: #c65d31; text-decoration: none; }}
+    input[type=file] {{ margin: 12px 0; }}
+    button {{ border: none; border-radius: 999px; padding: 10px 20px; background: #c65d31; color: #fff; }}
+    .notice {{ background: #fff1d9; border: 1px solid #e4d8c8; padding: 10px 12px; border-radius: 10px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <nav>
+      <a href="/">设置</a>
+      <a href="/upload">上传</a>
+      <a href="/jobs">任务</a>
+    </nav>
+    <h1>上传媒体</h1>
+    {notice}
+    <form method="post" enctype="multipart/form-data">
+      <input type="file" name="file" />
+      <button type="submit">上传并创建任务</button>
+    </form>
+  </main>
 </body>
 </html>
 """
@@ -316,12 +506,28 @@ class SettingsHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
+        path = urlparse(self.path).path
+        if path == "/jobs":
+            jobs = list_jobs()
+            page = render_jobs(jobs)
+            return self._send_html(page)
+        if path == "/upload":
+            page = render_upload()
+            return self._send_html(page)
         values, _entries = load_env_file(WEB_CONFIG_PATH)
         sections = load_schema(WEB_SCHEMA_PATH)
         page = render_page(values, sections)
         self._send_html(page)
 
     def do_POST(self):
+        path = urlparse(self.path).path
+        if path == "/upload":
+            return self._handle_upload()
+        if path == "/scan":
+            ok = trigger_scan()
+            jobs = list_jobs()
+            page = render_jobs(jobs, message="已触发扫描" if ok else "触发失败")
+            return self._send_html(page)
         length = int(self.headers.get("Content-Length", 0))
         data = self.rfile.read(length).decode("utf-8")
         params = parse_qs(data, keep_blank_values=True)
@@ -349,6 +555,29 @@ class SettingsHandler(BaseHTTPRequestHandler):
         sections = load_schema(WEB_SCHEMA_PATH)
         page = render_page(values, sections, message=message)
         self._send_html(page)
+
+    def _handle_upload(self):
+        max_bytes = WEB_MAX_UPLOAD_MB * 1024 * 1024
+        if int(self.headers.get("Content-Length", 0)) > max_bytes:
+            return self._send_html(render_upload("文件过大"), status=413)
+        form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={"REQUEST_METHOD": "POST"})
+        file_item = form["file"] if "file" in form else None
+        if not file_item or not file_item.filename:
+            return self._send_html(render_upload("请选择文件"))
+
+        watch_dirs = get_watch_dirs()
+        target_dir = WEB_UPLOAD_DIR or (watch_dirs[0] if watch_dirs else "")
+        if not target_dir:
+            return self._send_html(render_upload("未配置上传目录"))
+        os.makedirs(target_dir, exist_ok=True)
+        filename = os.path.basename(file_item.filename)
+        dest_path = os.path.join(target_dir, filename)
+        if os.path.exists(dest_path) and not WEB_UPLOAD_OVERWRITE:
+            return self._send_html(render_upload("文件已存在"))
+        with open(dest_path, "wb") as f:
+            f.write(file_item.file.read())
+        job_id = create_job(dest_path)
+        return self._send_html(render_upload(f"上传成功，任务 {job_id} 已创建"))
 
     def log_message(self, format, *args):
         return None

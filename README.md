@@ -57,7 +57,7 @@ docker compose up -d
 ```
 
 ### Web 设置页（可选）
-该页面仅负责编辑 `.env`，保存后需手动重启服务才会生效。
+包含设置页与简单的上传/任务列表页面，保存后需手动重启服务才会生效。
 
 ```bash
 docker run --rm -p 8000:8000 \
@@ -67,11 +67,22 @@ docker run --rm -p 8000:8000 \
   python /app/web.py
 ```
 
+访问地址：
+- 设置页：`http://localhost:8000/`
+- 上传页：`http://localhost:8000/upload`
+- 任务页：`http://localhost:8000/jobs`
+
 环境变量：
 - `WEB_HOST`：默认 `0.0.0.0`
 - `WEB_PORT`：默认 `8000`
 - `WEB_CONFIG_PATH`：默认 `/app/.env`
 - `WEB_SCHEMA_PATH`：默认 `/app/.env.example`
+- `WEB_DB_PATH`：任务数据库路径（默认 `/app/web.db`）
+- `WEB_UPLOAD_DIR`：上传保存目录（为空则取 `WATCH_DIRS` 第一个）
+- `WEB_UPLOAD_OVERWRITE`：是否允许覆盖同名文件（默认 `false`）
+- `WEB_MAX_UPLOAD_MB`：上传大小上限（默认 `2048`）
+- `WEB_TRIGGER_SCAN_FILE`：触发扫描文件名（默认 `.scan_now`）
+- `WEB_WATCH_DIRS`：Web 专用监听目录（为空则使用 `.env` 的 `WATCH_DIRS`）
 
 ## 配置说明（环境变量）
 
