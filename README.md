@@ -87,6 +87,7 @@ docker run --rm -p 8000:8000 \
 - `WEB_LOG_LIMIT`：日志页默认展示条数（默认 `200`）
 - `WEB_UPLOAD_ASR_MODE_DEFAULT`：上传页默认 ASR 模式（默认读取 `.env` 的 `ASR_MODE`）
 - `WEB_UPLOAD_SEGMENT_MODE_DEFAULT`：上传页默认切片模式（默认读取 `.env` 的 `SEGMENT_MODE`）
+- `WEB_WAL_CHECKPOINT_EVERY`：SQLite WAL 定期 checkpoint 频率（默认 `50` 次写入）
 
 上传页会为每个文件生成同名任务覆盖文件 `<name>.job.json`，可手工编辑：
 

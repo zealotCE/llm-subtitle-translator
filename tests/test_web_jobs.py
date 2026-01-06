@@ -23,7 +23,8 @@ def test_trigger_scan(tmp_path, monkeypatch):
     watch_dir.mkdir()
     monkeypatch.setattr(web, "WEB_TRIGGER_SCAN_FILE", ".scan_now")
     monkeypatch.setattr(web, "WEB_WATCH_DIRS", str(watch_dir))
-    assert web.trigger_scan() is True
+    ok, _reason = web.trigger_scan()
+    assert ok is True
     assert (watch_dir / ".scan_now").exists()
 
 

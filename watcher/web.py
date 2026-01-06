@@ -7,6 +7,7 @@ import tempfile
 import time
 from email import policy
 from email.parser import BytesParser
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -25,6 +26,10 @@ WEB_WATCH_DIRS = os.getenv("WEB_WATCH_DIRS", "")
 WEB_LOG_LIMIT = int(os.getenv("WEB_LOG_LIMIT", "200"))
 WEB_UPLOAD_ASR_MODE_DEFAULT = os.getenv("WEB_UPLOAD_ASR_MODE_DEFAULT", "")
 WEB_UPLOAD_SEGMENT_MODE_DEFAULT = os.getenv("WEB_UPLOAD_SEGMENT_MODE_DEFAULT", "")
+WEB_WAL_CHECKPOINT_EVERY = int(os.getenv("WEB_WAL_CHECKPOINT_EVERY", "50"))
+
+_wal_lock = threading.Lock()
+_wal_counter = 0
 
 SENSITIVE_KEYS = {
     "DASHSCOPE_API_KEY",
@@ -154,6 +159,10 @@ def _init_db():
         return None
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except sqlite3.OperationalError:
+        pass
     conn.execute(
         "CREATE TABLE IF NOT EXISTS jobs ("
         "id TEXT PRIMARY KEY, "
@@ -163,6 +172,21 @@ def _init_db():
     )
     conn.commit()
     return conn
+
+
+def _maybe_checkpoint(conn):
+    global _wal_counter
+    if WEB_WAL_CHECKPOINT_EVERY <= 0:
+        return
+    with _wal_lock:
+        _wal_counter += 1
+        if _wal_counter < WEB_WAL_CHECKPOINT_EVERY:
+            return
+        _wal_counter = 0
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except sqlite3.OperationalError:
+        return
 
 
 def create_job(path):
@@ -175,6 +199,7 @@ def create_job(path):
         (job_id, path, int(time.time())),
     )
     conn.commit()
+    _maybe_checkpoint(conn)
     conn.close()
     return job_id
 
@@ -218,17 +243,24 @@ def load_job_meta(path):
 
 def trigger_scan():
     watch_dirs = get_watch_dirs()
-    if not watch_dirs or not WEB_TRIGGER_SCAN_FILE:
-        return False
+    if not watch_dirs:
+        return False, "未配置 WATCH_DIRS"
+    if not WEB_TRIGGER_SCAN_FILE:
+        return False, "未配置触发文件名"
+    last_error = ""
+    ok = False
     for base in watch_dirs:
         os.makedirs(base, exist_ok=True)
         path = os.path.join(base, WEB_TRIGGER_SCAN_FILE)
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write("scan")
-        except OSError:
-            return False
-    return True
+            ok = True
+        except OSError as exc:
+            last_error = str(exc)
+    if ok:
+        return True, ""
+    return False, last_error or "触发失败"
 
 
 def get_log_path():
@@ -656,9 +688,13 @@ class SettingsHandler(BaseHTTPRequestHandler):
         if path == "/upload":
             return self._handle_upload()
         if path == "/scan":
-            ok = trigger_scan()
+            ok, reason = trigger_scan()
             jobs = list_jobs()
-            page = render_jobs(jobs, message="已触发扫描" if ok else "触发失败")
+            if ok:
+                message = "已触发扫描"
+            else:
+                message = f"触发失败：{reason}"
+            page = render_jobs(jobs, message=message)
             return self._send_html(page)
         if path == "/logs":
             return self._handle_logs(post=True)
