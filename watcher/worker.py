@@ -215,6 +215,12 @@ EVAL_SAMPLE_RATE = float(os.getenv("EVAL_SAMPLE_RATE", "1.0"))
 MANUAL_METADATA_DIR = os.getenv("MANUAL_METADATA_DIR", "metadata").strip()
 SRT_VALIDATE = os.getenv("SRT_VALIDATE", "true").lower() == "true"
 SRT_AUTO_FIX = os.getenv("SRT_AUTO_FIX", "true").lower() == "true"
+LLM_RPS = float(os.getenv("LLM_RPS", "0"))
+DASHSCOPE_RPS = float(os.getenv("DASHSCOPE_RPS", "0"))
+METADATA_RPS = float(os.getenv("METADATA_RPS", "0"))
+
+_RATE_LIMIT_LOCK = threading.Lock()
+_RATE_LIMIT_STATE = {}
 
 SIMPLIFIED_TOKENS = (
     "zh-hans",
@@ -1472,6 +1478,7 @@ def guess_lang_from_label(text):
 
 
 def _safe_get_json(url, headers=None, params=None, timeout=10):
+    rate_limit("metadata", METADATA_RPS)
     resp = requests.get(url, headers=headers, params=params, timeout=timeout)
     if 400 <= resp.status_code < 500:
         raise RuntimeError(f"http {resp.status_code}: {resp.text}")
@@ -2721,6 +2728,23 @@ def validate_and_fix_subs(subs):
     return fixed, issues
 
 
+def rate_limit(key, rps):
+    if not rps or rps <= 0:
+        return
+    interval = 1.0 / rps
+    now = time.monotonic()
+    wait = 0.0
+    with _RATE_LIMIT_LOCK:
+        next_time = _RATE_LIMIT_STATE.get(key, 0.0)
+        if now < next_time:
+            wait = next_time - now
+            _RATE_LIMIT_STATE[key] = next_time + interval
+        else:
+            _RATE_LIMIT_STATE[key] = now + interval
+    if wait > 0:
+        time.sleep(wait)
+
+
 def ms_to_srt_timestamp(ms):
     if ms < 0:
         ms = 0
@@ -2988,6 +3012,7 @@ def dashscope_transcribe(url, hotwords=None, vocabulary_id=None):
     dashscope.api_key = DASHSCOPE_API_KEY
 
     def _call():
+        rate_limit("dashscope", DASHSCOPE_RPS)
         kwargs = {"model": ASR_MODEL, "file_urls": [url]}
         if ASR_MODEL == "paraformer-v2" and LANGUAGE_HINTS:
             kwargs["language_hints"] = LANGUAGE_HINTS
@@ -3022,6 +3047,7 @@ def dashscope_realtime_transcribe(
 ):
     dashscope.api_key = DASHSCOPE_API_KEY
 
+    rate_limit("dashscope", DASHSCOPE_RPS)
     kwargs = {
         "model": ASR_MODEL,
         "format": "wav",
@@ -3102,6 +3128,7 @@ def dashscope_realtime_streaming_transcribe(
 ):
     dashscope.api_key = DASHSCOPE_API_KEY
 
+    rate_limit("dashscope", DASHSCOPE_RPS)
     callback = _StreamingCollector()
     kwargs = {
         "model": ASR_MODEL,
@@ -3299,6 +3326,7 @@ def build_srt(response, segment_mode="post"):
 
     if not sentences and not words and transcription_url:
         def _fetch():
+            rate_limit("dashscope", DASHSCOPE_RPS)
             resp = requests.get(transcription_url, timeout=30)
             resp.raise_for_status()
             return resp.json()
@@ -3775,6 +3803,7 @@ def llm_client_from_env():
         return [{"role": "user", "content": prompt}]
 
     def _call(prompt):
+        rate_limit("llm", LLM_RPS)
         payload = {
             "model": LLM_MODEL,
             "temperature": LLM_TEMPERATURE,
