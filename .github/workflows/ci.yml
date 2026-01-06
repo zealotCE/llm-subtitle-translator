@@ -24,7 +24,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest -q --cov=watcher --cov-report=term-missing:skip-covered --cov-report=xml
+          pytest -q --cov=watcher --cov-report=term-missing:skip-covered --cov-report=xml --cov-fail-under=20
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4

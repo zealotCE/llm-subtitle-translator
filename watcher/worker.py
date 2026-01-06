@@ -359,7 +359,7 @@ def _clean_title(text):
     cleaned = re.sub(r"\([^\)]*\)", " ", cleaned)
     cleaned = re.sub(r"\b(1080p|720p|2160p|4k|x264|x265|hevc|h264|h265)\b", " ", cleaned, flags=re.I)
     cleaned = re.sub(r"\b(web[- ]?dl|webrip|bdrip|hdrip|bluray|aac|flac|dts)\b", " ", cleaned, flags=re.I)
-    cleaned = re.sub(r"\b(s\d{1,2}e\d{1,3})\b", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"\b(s\d{1,2}e\d{1,4})\b", " ", cleaned, flags=re.I)
     cleaned = re.sub(r"[_\.]+", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip()
@@ -372,7 +372,7 @@ def guess_work_info_from_path(path):
     episode = None
     confidence = 0.1
 
-    sxe = re.search(r"[sS](\d{1,2})\s*[eE](\d{1,3})", name)
+    sxe = re.search(r"[sS](\d{1,2})\s*[eE](\d{1,4})", name)
     if sxe:
         season = str(int(sxe.group(1)))
         episode = str(int(sxe.group(2)))
