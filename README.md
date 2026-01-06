@@ -69,6 +69,9 @@ docker compose up -d
 - `LOG_DIR`：日志文件输出目录（为空则仅输出到 stdout）
 - `LOG_FILE_NAME`：日志文件名（默认 `worker.log`）
 - `TRIGGER_SCAN_FILE`：触发扫描的文件名（默认 `.scan_now`）
+- `WORKER_CONCURRENCY`：处理线程数（默认 `1`）
+- `MAX_ACTIVE_JOBS`：同时处理的任务上限（默认 `WORKER_CONCURRENCY`）
+- `FFMPEG_CONCURRENCY`：FFmpeg 并发上限（默认 `1`）
 
 ### 手动触发扫描
 
@@ -90,6 +93,28 @@ docker exec <container> sh -c 'touch /watch/.scan_now'
 ### DashScope 百炼
 - `DASHSCOPE_API_KEY`：必填
 - `ASR_MODEL`：默认 `paraformer-v2`
+- `ASR_MODE`：`offline|realtime`（默认 `offline`，`realtime` 不依赖 OSS）
+- `SEGMENT_MODE`：`post|auto`（默认 `post`）
+- `ASR_SAMPLE_RATE`：采样率（默认 `16000`）
+- `ASR_REALTIME_CHUNK_SECONDS`：实时 ASR 分片时长（秒，默认 `900`）
+- `ASR_REALTIME_CHUNK_OVERLAP_MS`：实时 ASR 分片重叠（毫秒，默认 `500`）
+- `ASR_REALTIME_RETRY`：实时 ASR 单分片重试次数（默认 `2`）
+- `ASR_REALTIME_CHUNK_MIN_SECONDS`：实时 ASR 分片最小时长（秒，默认 `300`）
+- `ASR_REALTIME_CHUNK_MAX_SECONDS`：实时 ASR 分片最大时长（秒，默认 `900`）
+- `ASR_REALTIME_CHUNK_TARGET`：实时 ASR 目标分片数（默认 `12`）
+- `ASR_REALTIME_FAILURE_RATE_THRESHOLD`：失败率阈值触发自适应重试（默认 `0.3`）
+- `ASR_REALTIME_ADAPTIVE_RETRY`：是否启用分片自适应重试（默认 `true`）
+- `ASR_REALTIME_STREAMING_ENABLED`：实时 ASR 使用流式发送（默认 `false`）
+- `ASR_REALTIME_STREAM_FRAME_MS`：实时流式每包时长（毫秒，默认 `100`）
+- `ASR_REALTIME_FALLBACK_ENABLED`：失败率过高时启用 VAD 断句重试（默认 `true`）
+- `ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE`：VAD 静音阈值（默认 `1200`）
+- `ASR_REALTIME_FALLBACK_MULTI_THRESHOLD`：VAD 多阈值防止过长（默认 `true`）
+- `ASR_SEMANTIC_PUNCTUATION_ENABLED`：实时 ASR 语义断句（默认 `false`）
+- `ASR_MAX_SENTENCE_SILENCE`：实时 ASR VAD 静音阈值 ms（默认 `800`）
+- `ASR_MULTI_THRESHOLD_MODE_ENABLED`：实时 ASR 多阈值防止过长（默认 `false`）
+- `ASR_PUNCTUATION_PREDICTION_ENABLED`：实时 ASR 标点预测（默认 `true`）
+- `ASR_DISFLUENCY_REMOVAL_ENABLED`：实时 ASR 过滤语气词（默认 `false`）
+- `ASR_HEARTBEAT`：实时 ASR 心跳保活（默认 `false`）
 - `LANGUAGE_HINTS`：默认 `ja,en`（仅 paraformer-v2 使用）
 
 ### OSS

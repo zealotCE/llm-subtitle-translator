@@ -11,18 +11,20 @@ import threading
 import time
 import uuid
 import xml.etree.ElementTree as ET
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from dataclasses import dataclass
 from typing import Callable, Dict, List, NamedTuple, Optional
+import wave
 
 import dashscope
 import oss2
 import requests
 import srt
 import yaml
-from dashscope.audio.asr import Transcription, VocabularyService
+from dashscope.audio.asr import Recognition, RecognitionCallback, Transcription, VocabularyService
 
 VIDEO_EXTS = {".mp4", ".mkv", ".webm", ".mov", ".avi"}
 MIN_BYTES = 1 * 1024 * 1024
@@ -37,6 +39,51 @@ SCAN_INTERVAL = int(os.getenv("SCAN_INTERVAL", "300"))
 LOCK_TTL = int(os.getenv("LOCK_TTL", "7200"))
 OUTPUT_TO_SOURCE_DIR = os.getenv("OUTPUT_TO_SOURCE_DIR", "true").lower() == "true"
 TRIGGER_SCAN_FILE = os.getenv("TRIGGER_SCAN_FILE", ".scan_now").strip()
+WORKER_CONCURRENCY = int(os.getenv("WORKER_CONCURRENCY", "1"))
+FFMPEG_CONCURRENCY = int(os.getenv("FFMPEG_CONCURRENCY", "1"))
+MAX_ACTIVE_JOBS = int(os.getenv("MAX_ACTIVE_JOBS", str(WORKER_CONCURRENCY)))
+ASR_MODE = os.getenv("ASR_MODE", "offline").strip().lower()
+SEGMENT_MODE = os.getenv("SEGMENT_MODE", "post").strip().lower()
+ASR_SAMPLE_RATE = int(os.getenv("ASR_SAMPLE_RATE", "16000"))
+ASR_REALTIME_CHUNK_SECONDS = int(os.getenv("ASR_REALTIME_CHUNK_SECONDS", "900"))
+ASR_REALTIME_CHUNK_OVERLAP_MS = int(os.getenv("ASR_REALTIME_CHUNK_OVERLAP_MS", "500"))
+ASR_REALTIME_RETRY = int(os.getenv("ASR_REALTIME_RETRY", "2"))
+ASR_REALTIME_CHUNK_MIN_SECONDS = int(os.getenv("ASR_REALTIME_CHUNK_MIN_SECONDS", "300"))
+ASR_REALTIME_CHUNK_MAX_SECONDS = int(os.getenv("ASR_REALTIME_CHUNK_MAX_SECONDS", "900"))
+ASR_REALTIME_CHUNK_TARGET = int(os.getenv("ASR_REALTIME_CHUNK_TARGET", "12"))
+ASR_REALTIME_FAILURE_RATE_THRESHOLD = float(
+    os.getenv("ASR_REALTIME_FAILURE_RATE_THRESHOLD", "0.3")
+)
+ASR_REALTIME_ADAPTIVE_RETRY = (
+    os.getenv("ASR_REALTIME_ADAPTIVE_RETRY", "true").lower() == "true"
+)
+ASR_REALTIME_STREAMING_ENABLED = (
+    os.getenv("ASR_REALTIME_STREAMING_ENABLED", "false").lower() == "true"
+)
+ASR_REALTIME_STREAM_FRAME_MS = int(os.getenv("ASR_REALTIME_STREAM_FRAME_MS", "100"))
+ASR_REALTIME_FALLBACK_ENABLED = (
+    os.getenv("ASR_REALTIME_FALLBACK_ENABLED", "true").lower() == "true"
+)
+ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE = int(
+    os.getenv("ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE", "1200")
+)
+ASR_REALTIME_FALLBACK_MULTI_THRESHOLD = (
+    os.getenv("ASR_REALTIME_FALLBACK_MULTI_THRESHOLD", "true").lower() == "true"
+)
+ASR_SEMANTIC_PUNCTUATION_ENABLED = (
+    os.getenv("ASR_SEMANTIC_PUNCTUATION_ENABLED", "false").lower() == "true"
+)
+ASR_MAX_SENTENCE_SILENCE = int(os.getenv("ASR_MAX_SENTENCE_SILENCE", "800"))
+ASR_MULTI_THRESHOLD_MODE_ENABLED = (
+    os.getenv("ASR_MULTI_THRESHOLD_MODE_ENABLED", "false").lower() == "true"
+)
+ASR_PUNCTUATION_PREDICTION_ENABLED = (
+    os.getenv("ASR_PUNCTUATION_PREDICTION_ENABLED", "true").lower() == "true"
+)
+ASR_DISFLUENCY_REMOVAL_ENABLED = (
+    os.getenv("ASR_DISFLUENCY_REMOVAL_ENABLED", "false").lower() == "true"
+)
+ASR_HEARTBEAT = os.getenv("ASR_HEARTBEAT", "false").lower() == "true"
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 ASR_MODEL = os.getenv("ASR_MODEL", "paraformer-v2")
@@ -221,6 +268,44 @@ class GroupingConfig:
     short_len_chars: Optional[int]
     short_len_words: Optional[int]
     sentence_end_chars: str
+
+
+def _clamp_positive(value: int, fallback: int) -> int:
+    if value <= 0:
+        return fallback
+    return value
+
+
+WORKER_CONCURRENCY = _clamp_positive(WORKER_CONCURRENCY, 1)
+FFMPEG_CONCURRENCY = _clamp_positive(FFMPEG_CONCURRENCY, 1)
+MAX_ACTIVE_JOBS = _clamp_positive(MAX_ACTIVE_JOBS, WORKER_CONCURRENCY)
+ASR_SAMPLE_RATE = _clamp_positive(ASR_SAMPLE_RATE, 16000)
+ASR_REALTIME_CHUNK_SECONDS = _clamp_positive(ASR_REALTIME_CHUNK_SECONDS, 900)
+ASR_REALTIME_CHUNK_OVERLAP_MS = max(0, ASR_REALTIME_CHUNK_OVERLAP_MS)
+ASR_REALTIME_RETRY = _clamp_positive(ASR_REALTIME_RETRY, 2)
+ASR_REALTIME_CHUNK_MIN_SECONDS = _clamp_positive(ASR_REALTIME_CHUNK_MIN_SECONDS, 300)
+ASR_REALTIME_CHUNK_MAX_SECONDS = _clamp_positive(ASR_REALTIME_CHUNK_MAX_SECONDS, 900)
+ASR_REALTIME_CHUNK_TARGET = _clamp_positive(ASR_REALTIME_CHUNK_TARGET, 12)
+ASR_REALTIME_FAILURE_RATE_THRESHOLD = max(0.0, ASR_REALTIME_FAILURE_RATE_THRESHOLD)
+ASR_REALTIME_STREAM_FRAME_MS = _clamp_positive(ASR_REALTIME_STREAM_FRAME_MS, 100)
+ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE = _clamp_positive(
+    ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE, 1200
+)
+if ASR_MODE not in {"offline", "realtime"}:
+    ASR_MODE = "offline"
+if SEGMENT_MODE not in {"post", "auto"}:
+    SEGMENT_MODE = "post"
+FFMPEG_SEMAPHORE = threading.Semaphore(FFMPEG_CONCURRENCY)
+JOB_SEMAPHORE = threading.Semaphore(MAX_ACTIVE_JOBS)
+
+
+@contextmanager
+def _semaphore_guard(semaphore: threading.Semaphore):
+    semaphore.acquire()
+    try:
+        yield
+    finally:
+        semaphore.release()
 
 
 @dataclass
@@ -734,7 +819,7 @@ def remove_lock(lock_path):
         pass
 
 
-def ffmpeg_extract_wav(video_path, wav_path, audio_track_index=None):
+def ffmpeg_extract_wav(video_path, wav_path, audio_track_index=None, sample_rate=16000):
     cmd = [
         "ffmpeg",
         "-y",
@@ -745,10 +830,11 @@ def ffmpeg_extract_wav(video_path, wav_path, audio_track_index=None):
         "-ac",
         "1",
         "-ar",
-        "16000",
+        str(sample_rate),
         wav_path,
     ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    with _semaphore_guard(FFMPEG_SEMAPHORE):
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def ffmpeg_extract_subtitle(video_path, stream_index, subtitle_path):
@@ -763,7 +849,8 @@ def ffmpeg_extract_subtitle(video_path, stream_index, subtitle_path):
         "srt",
         subtitle_path,
     ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    with _semaphore_guard(FFMPEG_SEMAPHORE):
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def ffmpeg_convert_subtitle(input_path, output_path):
@@ -776,7 +863,180 @@ def ffmpeg_convert_subtitle(input_path, output_path):
         "srt",
         output_path,
     ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    with _semaphore_guard(FFMPEG_SEMAPHORE):
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def wav_duration_seconds(path):
+    with wave.open(path, "rb") as wf:
+        frames = wf.getnframes()
+        rate = wf.getframerate()
+        if rate <= 0:
+            return 0.0
+        return frames / float(rate)
+
+
+def split_wav_by_duration(path, chunk_seconds, tmp_dir, overlap_ms=0):
+    if chunk_seconds <= 0:
+        return [(path, 0)]
+    duration = wav_duration_seconds(path)
+    if duration <= chunk_seconds:
+        return [(path, 0)]
+
+    chunks = []
+    with wave.open(path, "rb") as wf:
+        params = wf.getparams()
+        rate = wf.getframerate()
+        total_frames = wf.getnframes()
+        frames_per_chunk = int(chunk_seconds * rate)
+        overlap_frames = int((overlap_ms / 1000.0) * rate)
+        if frames_per_chunk <= 0:
+            return [(path, 0)]
+        if overlap_frames >= frames_per_chunk:
+            overlap_frames = max(0, frames_per_chunk // 2)
+        start_frame = 0
+        index = 0
+        while start_frame < total_frames:
+            wf.setpos(start_frame)
+            frames = wf.readframes(frames_per_chunk)
+            if not frames:
+                break
+            chunk_path = os.path.join(
+                tmp_dir, f"chunk-{uuid.uuid4().hex}-{index}.wav"
+            )
+            with wave.open(chunk_path, "wb") as out:
+                out.setparams(params)
+                out.writeframes(frames)
+            offset_ms = int((start_frame / float(rate)) * 1000)
+            chunks.append((chunk_path, offset_ms))
+            index += 1
+            next_frame = start_frame + frames_per_chunk - overlap_frames
+            if next_frame <= start_frame:
+                next_frame = start_frame + frames_per_chunk
+            start_frame = next_frame
+    return chunks
+
+
+def offset_subtitles(subs, offset_ms):
+    if offset_ms <= 0:
+        return subs
+    offset = timedelta(milliseconds=offset_ms)
+    return [
+        srt.Subtitle(
+            index=sub.index,
+            start=sub.start + offset,
+            end=sub.end + offset,
+            content=sub.content,
+        )
+        for sub in subs
+    ]
+
+
+def merge_subtitle_chunks(chunks, overlap_ms=0):
+    merged = []
+    overlap_delta = timedelta(milliseconds=max(0, overlap_ms))
+    for part in chunks:
+        if not part:
+            continue
+        for sub in part:
+            if not merged:
+                merged.append(sub)
+                continue
+            last_end = merged[-1].end
+            if sub.end <= last_end:
+                continue
+            if sub.start < last_end and sub.end <= last_end + overlap_delta:
+                continue
+            merged.append(sub)
+    for i, sub in enumerate(merged, start=1):
+        sub.index = i
+    return merged
+
+
+def choose_realtime_chunk_seconds(duration_seconds):
+    if ASR_REALTIME_CHUNK_SECONDS > 0:
+        return ASR_REALTIME_CHUNK_SECONDS
+    if duration_seconds <= 0:
+        return ASR_REALTIME_CHUNK_MAX_SECONDS
+    if ASR_REALTIME_CHUNK_TARGET > 0:
+        chunk = int((duration_seconds + ASR_REALTIME_CHUNK_TARGET - 1) / ASR_REALTIME_CHUNK_TARGET)
+    else:
+        chunk = ASR_REALTIME_CHUNK_MAX_SECONDS
+    chunk = max(ASR_REALTIME_CHUNK_MIN_SECONDS, chunk)
+    chunk = min(ASR_REALTIME_CHUNK_MAX_SECONDS, chunk)
+    return max(1, chunk)
+
+
+def run_realtime_chunks(
+    video_path,
+    tmp_wav,
+    vocab_id,
+    semantic_punctuation_enabled=None,
+    max_sentence_silence=None,
+    multi_threshold_mode_enabled=None,
+):
+    duration = wav_duration_seconds(tmp_wav)
+    chunk_seconds = choose_realtime_chunk_seconds(duration)
+    chunks = split_wav_by_duration(
+        tmp_wav,
+        chunk_seconds,
+        TMP_DIR,
+        overlap_ms=ASR_REALTIME_CHUNK_OVERLAP_MS,
+    )
+    log(
+        "INFO",
+        "实时 ASR 分片",
+        path=video_path,
+        chunks=len(chunks),
+        chunk_seconds=chunk_seconds,
+        overlap_ms=ASR_REALTIME_CHUNK_OVERLAP_MS,
+    )
+    responses = []
+    chunk_subs = []
+    failures = 0
+    for chunk_path, offset_ms in chunks:
+        try:
+            def _call():
+                if ASR_REALTIME_STREAMING_ENABLED:
+                    return dashscope_realtime_streaming_transcribe(
+                        chunk_path,
+                        vocabulary_id=vocab_id,
+                        semantic_punctuation_enabled=semantic_punctuation_enabled,
+                        max_sentence_silence=max_sentence_silence,
+                        multi_threshold_mode_enabled=multi_threshold_mode_enabled,
+                    )
+                return dashscope_realtime_transcribe(
+                    chunk_path,
+                    vocabulary_id=vocab_id,
+                    semantic_punctuation_enabled=semantic_punctuation_enabled,
+                    max_sentence_silence=max_sentence_silence,
+                    multi_threshold_mode_enabled=multi_threshold_mode_enabled,
+                )
+
+            response = retry(_call, attempts=ASR_REALTIME_RETRY, delay=2)
+            responses.append(to_dict(response))
+            part_subs, _ = build_srt(response, segment_mode=SEGMENT_MODE)
+            part_subs = offset_subtitles(part_subs, offset_ms)
+            chunk_subs.append(part_subs)
+        except Exception as exc:  # noqa: BLE001
+            failures += 1
+            log(
+                "ERROR",
+                "实时 ASR 分片失败",
+                path=video_path,
+                chunk=chunk_path,
+                error=str(exc),
+            )
+        finally:
+            if chunk_path != tmp_wav:
+                try:
+                    os.remove(chunk_path)
+                except OSError:
+                    pass
+    merged_subs = merge_subtitle_chunks(
+        chunk_subs, overlap_ms=ASR_REALTIME_CHUNK_OVERLAP_MS
+    )
+    return merged_subs, responses, failures, len(chunks), chunk_seconds
 
 
 def read_text_file(path):
@@ -2610,6 +2870,143 @@ def dashscope_transcribe(url, hotwords=None, vocabulary_id=None):
     return retry(_wait)
 
 
+def dashscope_realtime_transcribe(
+    path,
+    vocabulary_id=None,
+    semantic_punctuation_enabled=None,
+    max_sentence_silence=None,
+    multi_threshold_mode_enabled=None,
+):
+    dashscope.api_key = DASHSCOPE_API_KEY
+
+    kwargs = {
+        "model": ASR_MODEL,
+        "format": "wav",
+        "sample_rate": ASR_SAMPLE_RATE,
+        "callback": None,
+        "semantic_punctuation_enabled": (
+            ASR_SEMANTIC_PUNCTUATION_ENABLED
+            if semantic_punctuation_enabled is None
+            else semantic_punctuation_enabled
+        ),
+        "max_sentence_silence": (
+            ASR_MAX_SENTENCE_SILENCE if max_sentence_silence is None else max_sentence_silence
+        ),
+        "multi_threshold_mode_enabled": (
+            ASR_MULTI_THRESHOLD_MODE_ENABLED
+            if multi_threshold_mode_enabled is None
+            else multi_threshold_mode_enabled
+        ),
+        "punctuation_prediction_enabled": ASR_PUNCTUATION_PREDICTION_ENABLED,
+        "disfluency_removal_enabled": ASR_DISFLUENCY_REMOVAL_ENABLED,
+        "heartbeat": ASR_HEARTBEAT,
+    }
+    if ASR_MODEL == "paraformer-realtime-v2" and LANGUAGE_HINTS:
+        kwargs["language_hints"] = LANGUAGE_HINTS
+    if vocabulary_id:
+        kwargs["vocabulary_id"] = vocabulary_id
+    recognition = Recognition(**kwargs)
+
+    def _call():
+        return recognition.call(path)
+
+    return retry(_call)
+
+
+class _StreamingCollector(RecognitionCallback):
+    def __init__(self):
+        self.sentences = []
+        self.lock = threading.Lock()
+        self.completed = threading.Event()
+        self.errors = []
+
+    def on_open(self) -> None:
+        return None
+
+    def on_event(self, result) -> None:
+        sentence = result.get_sentence()
+        if not isinstance(sentence, dict):
+            return None
+        is_end = False
+        try:
+            is_end = result.is_sentence_end(sentence)
+        except Exception:  # noqa: BLE001
+            is_end = False
+        if not is_end and not sentence.get("text"):
+            return None
+        with self.lock:
+            self.sentences.append(sentence)
+        return None
+
+    def on_complete(self) -> None:
+        self.completed.set()
+
+    def on_error(self, result) -> None:
+        with self.lock:
+            self.errors.append(str(result))
+        self.completed.set()
+
+    def on_close(self) -> None:
+        self.completed.set()
+
+
+def dashscope_realtime_streaming_transcribe(
+    path,
+    vocabulary_id=None,
+    semantic_punctuation_enabled=None,
+    max_sentence_silence=None,
+    multi_threshold_mode_enabled=None,
+):
+    dashscope.api_key = DASHSCOPE_API_KEY
+
+    callback = _StreamingCollector()
+    kwargs = {
+        "model": ASR_MODEL,
+        "format": "wav",
+        "sample_rate": ASR_SAMPLE_RATE,
+        "callback": callback,
+        "semantic_punctuation_enabled": (
+            ASR_SEMANTIC_PUNCTUATION_ENABLED
+            if semantic_punctuation_enabled is None
+            else semantic_punctuation_enabled
+        ),
+        "max_sentence_silence": (
+            ASR_MAX_SENTENCE_SILENCE if max_sentence_silence is None else max_sentence_silence
+        ),
+        "multi_threshold_mode_enabled": (
+            ASR_MULTI_THRESHOLD_MODE_ENABLED
+            if multi_threshold_mode_enabled is None
+            else multi_threshold_mode_enabled
+        ),
+        "punctuation_prediction_enabled": ASR_PUNCTUATION_PREDICTION_ENABLED,
+        "disfluency_removal_enabled": ASR_DISFLUENCY_REMOVAL_ENABLED,
+        "heartbeat": ASR_HEARTBEAT,
+    }
+    if ASR_MODEL == "paraformer-realtime-v2" and LANGUAGE_HINTS:
+        kwargs["language_hints"] = LANGUAGE_HINTS
+    if vocabulary_id:
+        kwargs["vocabulary_id"] = vocabulary_id
+    recognition = Recognition(**kwargs)
+    recognition.start()
+
+    frames_per_chunk = int(ASR_SAMPLE_RATE * (ASR_REALTIME_STREAM_FRAME_MS / 1000.0))
+    frames_per_chunk = max(1, frames_per_chunk)
+    with wave.open(path, "rb") as wf:
+        while True:
+            data = wf.readframes(frames_per_chunk)
+            if not data:
+                break
+            recognition.send_audio_frame(data)
+
+    recognition.stop()
+    callback.completed.wait(timeout=60)
+    with callback.lock:
+        sentences = list(callback.sentences)
+    if not sentences:
+        raise RuntimeError("实时流式识别返回为空")
+    return {"transcripts": [{"sentences": sentences}]}
+
+
 def to_dict(obj):
     if isinstance(obj, dict):
         return obj
@@ -2732,7 +3129,7 @@ def max_time(items):
     return max_ts
 
 
-def build_srt(response):
+def build_srt(response, segment_mode="post"):
     resp_dict = to_dict(response)
     output = resp_dict.get("output", resp_dict)
     result = None
@@ -2775,23 +3172,29 @@ def build_srt(response):
     if words and not sentences:
         sentences = [{"begin_time": None, "end_time": None, "text": "", "words": words}]
 
-    post = post_process_asr_result(
-        {"transcripts": [{"sentences": sentences}]},
-        max_duration_seconds=ASR_MAX_DURATION_SECONDS,
-        max_chars=ASR_MAX_CHARS,
-        min_duration_seconds=ASR_MIN_DURATION_SECONDS,
-        min_chars=ASR_MIN_CHARS,
-        merge_gap_ms=ASR_MERGE_GAP_MS,
-    )
-    subs = [
-        srt.Subtitle(
-            index=item["index"],
-            start=timedelta(milliseconds=item["start_ms"]),
-            end=timedelta(milliseconds=item["end_ms"]),
-            content=item["text"],
+    if segment_mode == "auto":
+        if sentences:
+            subs = build_srt_from_sentences(sentences, 0.001)
+        else:
+            subs = build_srt_from_words(words, 0.001)
+    else:
+        post = post_process_asr_result(
+            {"transcripts": [{"sentences": sentences}]},
+            max_duration_seconds=ASR_MAX_DURATION_SECONDS,
+            max_chars=ASR_MAX_CHARS,
+            min_duration_seconds=ASR_MIN_DURATION_SECONDS,
+            min_chars=ASR_MIN_CHARS,
+            merge_gap_ms=ASR_MERGE_GAP_MS,
         )
-        for item in post
-    ]
+        subs = [
+            srt.Subtitle(
+                index=item["index"],
+                start=timedelta(milliseconds=item["start_ms"]),
+                end=timedelta(milliseconds=item["end_ms"]),
+                content=item["text"],
+            )
+            for item in post
+        ]
 
     if not subs:
         raise RuntimeError("未找到带时间戳的识别结果")
@@ -3508,24 +3911,95 @@ def process_video(video_path):
                         vocab_id = create_vocabulary_id(hotwords, asr_lang)
                         if vocab_id:
                             log("INFO", "热词词表创建", path=video_path, vocab_id=vocab_id)
-                ffmpeg_extract_wav(video_path, tmp_wav, audio_track.index if audio_track else None)
+                ffmpeg_extract_wav(
+                    video_path,
+                    tmp_wav,
+                    audio_track.index if audio_track else None,
+                    sample_rate=ASR_SAMPLE_RATE,
+                )
 
         if subs is None:
-            object_key = f"{OSS_PREFIX}{os.path.basename(tmp_wav)}"
-            bucket = oss_client()
-            upload_to_oss(bucket, tmp_wav, object_key)
-            url = oss_url(bucket, object_key)
+            if ASR_MODE == "realtime":
+                if hotwords and ASR_HOTWORDS_MODE == "param":
+                    log("WARN", "实时 ASR 不支持 param 热词，已忽略", path=video_path)
+                merged_subs, responses, failures, total, chunk_seconds = run_realtime_chunks(
+                    video_path, tmp_wav, vocab_id
+                )
+                if (
+                    ASR_REALTIME_ADAPTIVE_RETRY
+                    and total
+                    and failures / total >= ASR_REALTIME_FAILURE_RATE_THRESHOLD
+                    and chunk_seconds > ASR_REALTIME_CHUNK_MIN_SECONDS
+                ):
+                    log(
+                        "WARN",
+                        "实时 ASR 失败率过高，尝试缩短分片",
+                        path=video_path,
+                        failures=failures,
+                        total=total,
+                        chunk_seconds=chunk_seconds,
+                    )
+                    fallback_seconds = max(
+                        ASR_REALTIME_CHUNK_MIN_SECONDS,
+                        max(1, chunk_seconds // 2),
+                    )
+                    fallback_seconds = min(
+                        fallback_seconds, ASR_REALTIME_CHUNK_MAX_SECONDS
+                    )
+                    orig_seconds = ASR_REALTIME_CHUNK_SECONDS
+                    try:
+                        globals()["ASR_REALTIME_CHUNK_SECONDS"] = fallback_seconds
+                        merged_subs, responses, failures, total, _ = run_realtime_chunks(
+                            video_path, tmp_wav, vocab_id
+                        )
+                    finally:
+                        globals()["ASR_REALTIME_CHUNK_SECONDS"] = orig_seconds
+                if (
+                    ASR_REALTIME_FALLBACK_ENABLED
+                    and total
+                    and failures / total >= ASR_REALTIME_FAILURE_RATE_THRESHOLD
+                ):
+                    log(
+                        "WARN",
+                        "实时 ASR 失败率仍偏高，切换为 VAD 断句重试",
+                        path=video_path,
+                        failures=failures,
+                        total=total,
+                    )
+                    merged_subs, responses, failures, total, _ = run_realtime_chunks(
+                        video_path,
+                        tmp_wav,
+                        vocab_id,
+                        semantic_punctuation_enabled=False,
+                        max_sentence_silence=ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE,
+                        multi_threshold_mode_enabled=ASR_REALTIME_FALLBACK_MULTI_THRESHOLD,
+                    )
+                if SAVE_RAW_JSON:
+                    with open(raw_path, "w", encoding="utf-8") as f:
+                        json.dump(responses, f, ensure_ascii=False, indent=2)
+                if not merged_subs:
+                    raise RuntimeError("实时 ASR 无有效分片结果")
+                subs = merged_subs
+                srt_text = srt.compose(subs)
+            else:
+                object_key = f"{OSS_PREFIX}{os.path.basename(tmp_wav)}"
+                bucket = oss_client()
+                upload_to_oss(bucket, tmp_wav, object_key)
+                url = oss_url(bucket, object_key)
 
-            response = dashscope_transcribe(
-                url,
-                hotwords=hotwords if hotwords else None,
-                vocabulary_id=vocab_id,
-            )
-            if SAVE_RAW_JSON:
-                with open(raw_path, "w", encoding="utf-8") as f:
-                    json.dump(to_dict(response), f, ensure_ascii=False, indent=2)
+                response = dashscope_transcribe(
+                    url,
+                    hotwords=hotwords if hotwords else None,
+                    vocabulary_id=vocab_id,
+                )
+                if SAVE_RAW_JSON:
+                    with open(raw_path, "w", encoding="utf-8") as f:
+                        json.dump(to_dict(response), f, ensure_ascii=False, indent=2)
 
-            subs, srt_text = build_srt(response)
+                subs, srt_text = build_srt(response, segment_mode=SEGMENT_MODE)
+
+            if subs is None or srt_text is None:
+                raise RuntimeError("ASR 结果为空")
             with open(srt_path, "w", encoding="utf-8") as f:
                 f.write(srt_text)
             log("INFO", "识别完成并保存字幕", path=video_path, output=srt_path)
@@ -3770,8 +4244,9 @@ def worker_loop(q, pending, lock):
     while True:
         path = q.get()
         try:
-            if os.path.isfile(path) and is_video_file(path):
-                process_video(path)
+            with _semaphore_guard(JOB_SEMAPHORE):
+                if os.path.isfile(path) and is_video_file(path):
+                    process_video(path)
         finally:
             with lock:
                 pending.discard(path)
@@ -3840,8 +4315,9 @@ if __name__ == "__main__":
         raise SystemExit(1)
     if not DASHSCOPE_API_KEY:
         log("ERROR", "缺少 DASHSCOPE_API_KEY")
-    if not (OSS_ENDPOINT and OSS_BUCKET and OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET):
-        log("ERROR", "缺少 OSS 配置")
+    if ASR_MODE == "offline":
+        if not (OSS_ENDPOINT and OSS_BUCKET and OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET):
+            log("ERROR", "缺少 OSS 配置")
 
     q = queue.Queue()
     pending = set()
@@ -3850,7 +4326,8 @@ if __name__ == "__main__":
     GLOBAL_PENDING = pending
     GLOBAL_LOCK = lock
 
-    threading.Thread(target=worker_loop, args=(q, pending, lock), daemon=True).start()
+    for _ in range(WORKER_CONCURRENCY):
+        threading.Thread(target=worker_loop, args=(q, pending, lock), daemon=True).start()
     threading.Thread(target=scan_loop, args=(q, pending, lock), daemon=True).start()
     signal.signal(signal.SIGHUP, handle_scan_signal)
     signal.signal(signal.SIGUSR1, handle_scan_signal)
@@ -3862,5 +4339,10 @@ if __name__ == "__main__":
         out=OUT_DIR,
         recursive=WATCH_RECURSIVE,
         output_to_source_dir=OUTPUT_TO_SOURCE_DIR,
+        worker_concurrency=WORKER_CONCURRENCY,
+        max_active_jobs=MAX_ACTIVE_JOBS,
+        ffmpeg_concurrency=FFMPEG_CONCURRENCY,
+        asr_mode=ASR_MODE,
+        segment_mode=SEGMENT_MODE,
     )
     inotify_loop(q, pending, lock)
