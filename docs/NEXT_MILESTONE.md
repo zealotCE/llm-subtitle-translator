@@ -29,6 +29,7 @@
 - 任务详情：日志、产物、错误信息
 - 支持重试/取消/删除任务
 - 手动触发扫描/任务（Web 入口）
+- 并发控制与资源限制（Web 可配置）
 
 ### C. 字幕查看与编辑
 - SRT 预览
@@ -52,6 +53,12 @@
 - `LANGUAGE_HINTS` 保持一致
 - 失败不自动回退（用户手动切换）
 
+### G. 评估数据采集（默认关闭）
+
+- 当 `EVAL_COLLECT=true` 时启用
+- 若存在简体中文字幕，仍执行 ASR/翻译并保存评估样本
+- 保存参考字幕/候选字幕/源字幕与统计报告
+
 ## 后端设计草案
 
 ### 核心实体
@@ -61,6 +68,7 @@
   - `input_path, media_id, error, logs`
   - `trigger_source`：`inotify|scan|web`
   - `log_path`：指向 JSON Lines 日志
+  - `eval_enabled`：是否采集评估数据
 
 - `Media`
   - `id, filename, size, duration, audio_tracks, subtitle_tracks, labels, archived`
@@ -74,6 +82,9 @@
 - `Config`
   - key/value 配置映射（与 .env 对齐）
 
+- `EvaluationSample`
+  - `media_id, candidate_path, reference_path, source_path, report_path`
+
 ### 模块划分
 
 - `api/`：REST API
@@ -81,10 +92,12 @@
 - `storage/`：文件与 DB 接口
 - `workers/`：异步任务队列（可先用本地线程 + 任务表）
 - `logs/`：日志落盘与检索接口（可读 LOG_DIR）
+- `eval/`：评估数据采集与对齐统计
 
 ## API 草案（简版）
 
 - `POST /api/jobs`：创建任务（上传后）
+- `POST /api/jobs/batch`：批量创建任务
 - `GET /api/jobs`：任务列表
 - `GET /api/jobs/{id}`：任务详情
 - `POST /api/jobs/{id}/retry`：重试
@@ -96,6 +109,8 @@
 - `GET /api/config` / `PUT /api/config`
 - `POST /api/metadata/resolve`：人工确认元数据
 - `GET /api/logs`：按 `job_id` / `path` 查询日志
+- `GET /api/eval`：评估样本列表
+- `GET /api/eval/{id}`：评估样本详情
 
 ## 前端页面
 
@@ -112,6 +127,7 @@
 - 上传 → 任务 → 结果下载
 - 只读字幕预览
 - 任务与日志可视化（自动触发任务也入库）
+- 并发控制参数可配置（最小版）
 
 ### M2：字幕编辑 + 版本历史
 - 基本编辑、合并/拆分
@@ -125,6 +141,10 @@
 - 手动确认作品
 - 生成作品术语表
 
+### M4.5：评估数据采集
+- 支持 `EVAL_COLLECT` 开关与样本存档
+- Web 查看评估样本与报告
+
 ### M5：实时 ASR
 - FunASR Realtime 路径上线
 - 支持长视频分片
@@ -134,6 +154,7 @@
 - 字幕编辑体验（时间轴对齐）是高风险大成本
 - 实时 ASR 对网络稳定性依赖较强
 - 配置热更新需明确哪些项可即时生效
+- 评估样本可能包含原字幕内容，需提示用户自行合规保存
 
 ## 技术栈建议（拟）
 
