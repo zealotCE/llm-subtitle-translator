@@ -60,6 +60,7 @@ docker run -d \
 - `OUTPUT_TO_SOURCE_DIR`：是否将输出字幕/标记文件写回视频所在目录（默认 `true`）
 - `LOG_DIR`：日志文件输出目录（为空则仅输出到 stdout）
 - `LOG_FILE_NAME`：日志文件名（默认 `worker.log`）
+- `TRIGGER_SCAN_FILE`：触发扫描的文件名（默认 `.scan_now`）
 
 ### 手动触发扫描
 
@@ -70,6 +71,12 @@ docker run -d \
 docker kill -s HUP <container>
 # 或者
 docker kill -s USR1 <container>
+```
+
+也支持通过 `docker exec` 触发扫描：
+
+```bash
+docker exec <container> sh -c 'touch /watch/.scan_now'
 ```
 
 ### DashScope 百炼

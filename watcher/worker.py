@@ -36,6 +36,7 @@ TMP_DIR = os.getenv("TMP_DIR", "/tmp")
 SCAN_INTERVAL = int(os.getenv("SCAN_INTERVAL", "300"))
 LOCK_TTL = int(os.getenv("LOCK_TTL", "7200"))
 OUTPUT_TO_SOURCE_DIR = os.getenv("OUTPUT_TO_SOURCE_DIR", "true").lower() == "true"
+TRIGGER_SCAN_FILE = os.getenv("TRIGGER_SCAN_FILE", ".scan_now").strip()
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 ASR_MODEL = os.getenv("ASR_MODEL", "paraformer-v2")
@@ -3722,6 +3723,9 @@ def scan_once(q, pending, lock):
 
 def scan_loop(q, pending, lock):
     while True:
+        if _check_trigger_files():
+            scan_once(q, pending, lock)
+            continue
         scan_once(q, pending, lock)
         time.sleep(SCAN_INTERVAL)
 
@@ -3765,8 +3769,31 @@ def inotify_loop(q, pending, lock):
         path = line.strip()
         if not path:
             continue
+        if TRIGGER_SCAN_FILE and os.path.basename(path) == TRIGGER_SCAN_FILE:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            log("INFO", "触发文件扫描", path=path)
+            scan_once(q, pending, lock)
+            continue
         if os.path.isfile(path) and is_video_file(path):
             enqueue(path, q, pending, lock)
+
+
+def _check_trigger_files():
+    if not TRIGGER_SCAN_FILE:
+        return False
+    for base in WATCH_DIR_LIST:
+        path = os.path.join(base, TRIGGER_SCAN_FILE)
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            log("INFO", "触发文件扫描", path=path)
+            return True
+    return False
 
 
 def handle_scan_signal(signum, frame):
