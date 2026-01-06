@@ -1,5 +1,6 @@
 import cgi
 import html
+import json
 import os
 import re
 import sqlite3
@@ -21,6 +22,8 @@ WEB_MAX_UPLOAD_MB = int(os.getenv("WEB_MAX_UPLOAD_MB", "2048"))
 WEB_TRIGGER_SCAN_FILE = os.getenv("WEB_TRIGGER_SCAN_FILE", ".scan_now").strip()
 WEB_WATCH_DIRS = os.getenv("WEB_WATCH_DIRS", "")
 WEB_LOG_LIMIT = int(os.getenv("WEB_LOG_LIMIT", "200"))
+WEB_UPLOAD_ASR_MODE_DEFAULT = os.getenv("WEB_UPLOAD_ASR_MODE_DEFAULT", "")
+WEB_UPLOAD_SEGMENT_MODE_DEFAULT = os.getenv("WEB_UPLOAD_SEGMENT_MODE_DEFAULT", "")
 
 SENSITIVE_KEYS = {
     "DASHSCOPE_API_KEY",
@@ -110,6 +113,13 @@ def get_watch_dirs():
     return items
 
 
+def get_upload_defaults():
+    data, _entries = load_env_file(WEB_CONFIG_PATH)
+    asr_mode = WEB_UPLOAD_ASR_MODE_DEFAULT or data.get("ASR_MODE", "offline")
+    segment_mode = WEB_UPLOAD_SEGMENT_MODE_DEFAULT or data.get("SEGMENT_MODE", "post")
+    return asr_mode, segment_mode
+
+
 def update_env_file(path, updates):
     data, entries = load_env_file(path)
     data.update(updates)
@@ -179,6 +189,21 @@ def infer_job_status(path):
     if os.path.exists(lock_path):
         return "running"
     return "pending"
+
+
+def load_job_meta(path):
+    base = os.path.splitext(os.path.basename(path))[0]
+    meta_path = os.path.join(os.path.dirname(path), f"{base}.job.json")
+    if not os.path.exists(meta_path):
+        return {}
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:  # noqa: BLE001
+        return {}
+    if isinstance(data, dict):
+        return data
+    return {}
 
 
 def trigger_scan():
@@ -435,12 +460,17 @@ def render_jobs(jobs, message=""):
     rows = []
     for job_id, path, created_at in jobs:
         status = infer_job_status(path)
+        meta = load_job_meta(path)
+        asr_mode = str(meta.get("asr_mode", ""))
+        segment_mode = str(meta.get("segment_mode", ""))
         created = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(created_at))
         rows.append(
             "<tr>"
             f"<td>{html.escape(job_id)}</td>"
             f"<td>{html.escape(path)}</td>"
             f"<td>{html.escape(status)}</td>"
+            f"<td>{html.escape(asr_mode)}</td>"
+            f"<td>{html.escape(segment_mode)}</td>"
             f"<td>{html.escape(created)}</td>"
             "</tr>"
         )
@@ -477,7 +507,7 @@ def render_jobs(jobs, message=""):
     </form>
     <table>
       <thead>
-        <tr><th>任务 ID</th><th>路径</th><th>状态</th><th>创建时间</th></tr>
+        <tr><th>任务 ID</th><th>路径</th><th>状态</th><th>ASR</th><th>切片</th><th>创建时间</th></tr>
       </thead>
       <tbody>
         {rows_html}
@@ -489,7 +519,7 @@ def render_jobs(jobs, message=""):
 """
 
 
-def render_upload(message=""):
+def render_upload(message="", asr_mode="", segment_mode=""):
     notice = f"<div class='notice'>{html.escape(message)}</div>" if message else ""
     return f"""<!DOCTYPE html>
 <html lang="zh">
@@ -500,9 +530,10 @@ def render_upload(message=""):
   <style>
     body {{ font-family: "IBM Plex Serif", serif; background: #f7f4ef; color: #1f1c18; }}
     main {{ max-width: 760px; margin: 0 auto; padding: 24px; }}
-    form {{ background: #fff8ef; padding: 18px; border: 1px solid #e4d8c8; border-radius: 14px; }}
+    form {{ background: #fff8ef; padding: 18px; border: 1px solid #e4d8c8; border-radius: 14px; display: grid; gap: 12px; }}
     nav a {{ margin-right: 12px; color: #c65d31; text-decoration: none; }}
     input[type=file] {{ margin: 12px 0; }}
+    select {{ padding: 8px 10px; border-radius: 8px; border: 1px solid #e4d8c8; }}
     button {{ border: none; border-radius: 999px; padding: 10px 20px; background: #c65d31; color: #fff; }}
     .notice {{ background: #fff1d9; border: 1px solid #e4d8c8; padding: 10px 12px; border-radius: 10px; }}
   </style>
@@ -518,6 +549,16 @@ def render_upload(message=""):
     <h1>上传媒体</h1>
     {notice}
     <form method="post" enctype="multipart/form-data">
+      <label>ASR 模式</label>
+      <select name="asr_mode">
+        <option value="offline" {"selected" if asr_mode == "offline" else ""}>offline</option>
+        <option value="realtime" {"selected" if asr_mode == "realtime" else ""}>realtime</option>
+      </select>
+      <label>切片模式</label>
+      <select name="segment_mode">
+        <option value="post" {"selected" if segment_mode == "post" else ""}>post</option>
+        <option value="auto" {"selected" if segment_mode == "auto" else ""}>auto</option>
+      </select>
       <input type="file" name="file" />
       <button type="submit">上传并创建任务</button>
     </form>
@@ -590,7 +631,8 @@ class SettingsHandler(BaseHTTPRequestHandler):
             page = render_jobs(jobs)
             return self._send_html(page)
         if path == "/upload":
-            page = render_upload()
+            asr_mode, segment_mode = get_upload_defaults()
+            page = render_upload(asr_mode=asr_mode, segment_mode=segment_mode)
             return self._send_html(page)
         if path == "/logs":
             return self._handle_logs()
@@ -645,21 +687,42 @@ class SettingsHandler(BaseHTTPRequestHandler):
         form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={"REQUEST_METHOD": "POST"})
         file_item = form["file"] if "file" in form else None
         if not file_item or not file_item.filename:
-            return self._send_html(render_upload("请选择文件"))
+            asr_mode, segment_mode = get_upload_defaults()
+            return self._send_html(render_upload("请选择文件", asr_mode, segment_mode))
 
         watch_dirs = get_watch_dirs()
         target_dir = WEB_UPLOAD_DIR or (watch_dirs[0] if watch_dirs else "")
         if not target_dir:
-            return self._send_html(render_upload("未配置上传目录"))
+            asr_mode, segment_mode = get_upload_defaults()
+            return self._send_html(render_upload("未配置上传目录", asr_mode, segment_mode))
         os.makedirs(target_dir, exist_ok=True)
         filename = os.path.basename(file_item.filename)
         dest_path = os.path.join(target_dir, filename)
         if os.path.exists(dest_path) and not WEB_UPLOAD_OVERWRITE:
-            return self._send_html(render_upload("文件已存在"))
+            asr_mode, segment_mode = get_upload_defaults()
+            return self._send_html(render_upload("文件已存在", asr_mode, segment_mode))
         with open(dest_path, "wb") as f:
             f.write(file_item.file.read())
+        asr_mode = (form.getvalue("asr_mode") or get_upload_defaults()[0]).strip()
+        segment_mode = (form.getvalue("segment_mode") or get_upload_defaults()[1]).strip()
+        meta_path = os.path.join(
+            target_dir,
+            f"{os.path.splitext(filename)[0]}.job.json",
+        )
+        meta = {
+            "asr_mode": asr_mode,
+            "segment_mode": segment_mode,
+            "created_at": int(time.time()),
+        }
+        try:
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)
+        except OSError:
+            pass
         job_id = create_job(dest_path)
-        return self._send_html(render_upload(f"上传成功，任务 {job_id} 已创建"))
+        return self._send_html(
+            render_upload(f"上传成功，任务 {job_id} 已创建", asr_mode, segment_mode)
+        )
 
     def _handle_logs(self, post=False):
         if post:

@@ -84,6 +84,8 @@ docker run --rm -p 8000:8000 \
 - `WEB_TRIGGER_SCAN_FILE`：触发扫描文件名（默认 `.scan_now`）
 - `WEB_WATCH_DIRS`：Web 专用监听目录（为空则使用 `.env` 的 `WATCH_DIRS`）
 - `WEB_LOG_LIMIT`：日志页默认展示条数（默认 `200`）
+- `WEB_UPLOAD_ASR_MODE_DEFAULT`：上传页默认 ASR 模式（默认读取 `.env` 的 `ASR_MODE`）
+- `WEB_UPLOAD_SEGMENT_MODE_DEFAULT`：上传页默认切片模式（默认读取 `.env` 的 `SEGMENT_MODE`）
 
 ## 配置说明（环境变量）
 

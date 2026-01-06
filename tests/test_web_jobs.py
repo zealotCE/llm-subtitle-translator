@@ -37,3 +37,12 @@ def test_read_logs(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "WEB_CONFIG_PATH", str(env_path))
     logs = web.read_logs(limit=10)
     assert logs and "hello" in logs[0]
+
+
+def test_load_job_meta(tmp_path):
+    video = tmp_path / "a.mp4"
+    video.write_text("data", encoding="utf-8")
+    meta_path = tmp_path / "a.job.json"
+    meta_path.write_text('{"asr_mode":"realtime","segment_mode":"auto"}', encoding="utf-8")
+    meta = web.load_job_meta(str(video))
+    assert meta.get("asr_mode") == "realtime"

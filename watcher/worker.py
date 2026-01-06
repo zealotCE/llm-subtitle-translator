@@ -967,10 +967,26 @@ def choose_realtime_chunk_seconds(duration_seconds):
     return max(1, chunk)
 
 
+def load_job_overrides(video_path):
+    name = base_name(video_path)
+    meta_path = os.path.join(os.path.dirname(video_path), f"{name}.job.json")
+    if not os.path.exists(meta_path):
+        return {}
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:  # noqa: BLE001
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
 def run_realtime_chunks(
     video_path,
     tmp_wav,
     vocab_id,
+    segment_mode="post",
     semantic_punctuation_enabled=None,
     max_sentence_silence=None,
     multi_threshold_mode_enabled=None,
@@ -1015,7 +1031,7 @@ def run_realtime_chunks(
 
             response = retry(_call, attempts=ASR_REALTIME_RETRY, delay=2)
             responses.append(to_dict(response))
-            part_subs, _ = build_srt(response, segment_mode=SEGMENT_MODE)
+            part_subs, _ = build_srt(response, segment_mode=segment_mode)
             part_subs = offset_subtitles(part_subs, offset_ms)
             chunk_subs.append(part_subs)
         except Exception as exc:  # noqa: BLE001
@@ -3699,6 +3715,9 @@ def process_video(video_path):
     bi_path = os.path.join(out_dir, f"{name}.bi.srt")
     simplified_plain_path = os.path.join(out_dir, f"{name}.{SIMPLIFIED_LANG}.srt")
     simplified_llm_path = os.path.join(out_dir, f"{name}.llm.{SIMPLIFIED_LANG}.srt")
+    overrides = load_job_overrides(video_path)
+    asr_mode = (overrides.get("asr_mode") or ASR_MODE).strip().lower()
+    segment_mode = (overrides.get("segment_mode") or SEGMENT_MODE).strip().lower()
 
     skip, reason = should_skip(video_path)
     if skip:
@@ -3720,7 +3739,13 @@ def process_video(video_path):
     vocab_id = None
 
     try:
-        log("INFO", "开始处理", path=video_path)
+        log(
+            "INFO",
+            "开始处理",
+            path=video_path,
+            asr_mode=asr_mode,
+            segment_mode=segment_mode,
+        )
 
         media_info = probe_media(video_path)
         audio_cfg = AudioSelectionConfig(
@@ -3919,11 +3944,11 @@ def process_video(video_path):
                 )
 
         if subs is None:
-            if ASR_MODE == "realtime":
+            if asr_mode == "realtime":
                 if hotwords and ASR_HOTWORDS_MODE == "param":
                     log("WARN", "实时 ASR 不支持 param 热词，已忽略", path=video_path)
                 merged_subs, responses, failures, total, chunk_seconds = run_realtime_chunks(
-                    video_path, tmp_wav, vocab_id
+                    video_path, tmp_wav, vocab_id, segment_mode=segment_mode
                 )
                 if (
                     ASR_REALTIME_ADAPTIVE_RETRY
@@ -3950,7 +3975,7 @@ def process_video(video_path):
                     try:
                         globals()["ASR_REALTIME_CHUNK_SECONDS"] = fallback_seconds
                         merged_subs, responses, failures, total, _ = run_realtime_chunks(
-                            video_path, tmp_wav, vocab_id
+                            video_path, tmp_wav, vocab_id, segment_mode=segment_mode
                         )
                     finally:
                         globals()["ASR_REALTIME_CHUNK_SECONDS"] = orig_seconds
@@ -3970,6 +3995,7 @@ def process_video(video_path):
                         video_path,
                         tmp_wav,
                         vocab_id,
+                        segment_mode=segment_mode,
                         semantic_punctuation_enabled=False,
                         max_sentence_silence=ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE,
                         multi_threshold_mode_enabled=ASR_REALTIME_FALLBACK_MULTI_THRESHOLD,
@@ -3996,7 +4022,7 @@ def process_video(video_path):
                     with open(raw_path, "w", encoding="utf-8") as f:
                         json.dump(to_dict(response), f, ensure_ascii=False, indent=2)
 
-                subs, srt_text = build_srt(response, segment_mode=SEGMENT_MODE)
+                subs, srt_text = build_srt(response, segment_mode=segment_mode)
 
             if subs is None or srt_text is None:
                 raise RuntimeError("ASR 结果为空")
