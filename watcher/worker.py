@@ -348,17 +348,17 @@ def _strip_quotes(value):
 
 
 def parse_watch_dirs():
-    if WATCH_DIRS:
-        items = []
-        for raw in WATCH_DIRS.split(","):
-            raw = raw.strip()
-            if not raw:
-                continue
-            raw = _strip_quotes(raw)
-            if raw:
-                items.append(raw)
-        return items or [WATCH_DIR]
-    return [_strip_quotes(WATCH_DIR)]
+    if not WATCH_DIRS:
+        return []
+    items = []
+    for raw in WATCH_DIRS.split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        raw = _strip_quotes(raw)
+        if raw:
+            items.append(raw)
+    return items
 
 
 WATCH_DIR_LIST = parse_watch_dirs()
@@ -3834,6 +3834,9 @@ def handle_scan_signal(signum, frame):
 if __name__ == "__main__":
     ensure_dirs()
 
+    if not WATCH_DIR_LIST:
+        log("ERROR", "WATCH_DIRS 为空，请配置监听目录")
+        raise SystemExit(1)
     if not DASHSCOPE_API_KEY:
         log("ERROR", "缺少 DASHSCOPE_API_KEY")
     if not (OSS_ENDPOINT and OSS_BUCKET and OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET):

@@ -18,7 +18,7 @@
    ```bash
    cp .env.example .env
    ```
-2. 填写 `.env` 里的 DashScope 与 OSS 配置（不要提交密钥）
+2. 填写 `.env`（至少设置 `WATCH_DIRS`）以及 DashScope 与 OSS 配置（不要提交密钥）
 3. 启动服务：
    ```bash
    docker compose up -d --build
@@ -59,8 +59,7 @@ docker compose up -d
 ## 配置说明（环境变量）
 
 ### Watch/Output
-- `WATCH_DIR`：默认 `/watch`
-- `WATCH_DIRS`：多个监听目录（逗号分隔，优先于 `WATCH_DIR`；支持带引号的路径，会自动去引号）
+- `WATCH_DIRS`：监听目录（逗号分隔，支持带引号的路径，会自动去引号）
 - `WATCH_RECURSIVE`：是否递归监听子目录（默认 `true`）
 - `OUT_DIR`：默认 `/output`
 - `TMP_DIR`：默认 `/tmp`
