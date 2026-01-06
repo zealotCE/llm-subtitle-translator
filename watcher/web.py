@@ -149,9 +149,11 @@ def update_env_file(path, updates):
 def _init_db():
     try:
         os.makedirs(os.path.dirname(WEB_DB_PATH) or ".", exist_ok=True)
-        conn = sqlite3.connect(WEB_DB_PATH)
+        conn = sqlite3.connect(WEB_DB_PATH, timeout=5)
     except OSError:
         return None
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute(
         "CREATE TABLE IF NOT EXISTS jobs ("
         "id TEXT PRIMARY KEY, "
