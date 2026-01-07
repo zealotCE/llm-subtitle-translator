@@ -17,7 +17,21 @@ function isSensitive(key: string) {
   return ["KEY", "SECRET", "TOKEN", "PASSWORD"].some((part) => upper.includes(part));
 }
 
-const GROUPS = [
+type Field = {
+  key: string;
+  labelKey: string;
+  type: "text" | "number" | "switch" | "select";
+  wide?: boolean;
+  options?: string[];
+  allowCustom?: boolean;
+};
+
+type Group = {
+  titleKey: string;
+  fields: Field[];
+};
+
+const GROUPS: Group[] = [
   {
     titleKey: "settings.group.watch",
     fields: [
