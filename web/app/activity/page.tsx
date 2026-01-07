@@ -73,7 +73,7 @@ export default function ActivityPage() {
       <AuthGuard />
       <section className="mx-auto max-w-5xl space-y-6">
         <h1 className="section-title">{t("activity.title")}</h1>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid gap-3 md:grid-cols-3">
           <Select value={type} onChange={(event) => setType(event.target.value)}>
             <option value="">{t("activity.filterAll")}</option>
             <option value="media_added">{t("activity.type.media_added")}</option>
@@ -94,7 +94,12 @@ export default function ActivityPage() {
             <option value="50">50/页</option>
             <option value="100">100/页</option>
           </Select>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Button onClick={fetchActivity}>{t("common.search")}</Button>
+          <Link href="/logs" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            {t("activity.systemLogs")}
+          </Link>
         </div>
         <div className="space-y-3">
           {items.length ? (
@@ -107,15 +112,25 @@ export default function ActivityPage() {
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-500">
-                  <span>{t("activity.type")}: {item.type}</span>
-                  <span>{t("activity.status")}: {item.status}</span>
+                  <span>
+                    {t("activity.type")}: {t(`activity.type.${item.type}`) || item.type}
+                  </span>
+                  <span>
+                    {t("activity.status")}: {t(`status.${item.status}`) || item.status}
+                  </span>
                   {item.media_id ? (
-                    <Link href={`/media/${item.media_id}`} className={buttonVariants({ size: "sm", variant: "ghost" })}>
+                    <Link
+                      href={`/media/${item.media_id}`}
+                      className={buttonVariants({ size: "sm", variant: "outline" })}
+                    >
                       {t("activity.mediaLink")}
                     </Link>
                   ) : null}
                   {item.run_id ? (
-                    <Link href={`/runs/${item.run_id}`} className={buttonVariants({ size: "sm", variant: "ghost" })}>
+                    <Link
+                      href={`/runs/${item.run_id}`}
+                      className={buttonVariants({ size: "sm", variant: "outline" })}
+                    >
                       {t("activity.runLink")}
                     </Link>
                   ) : null}

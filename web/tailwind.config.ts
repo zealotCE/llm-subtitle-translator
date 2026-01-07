@@ -14,8 +14,8 @@ const config: Config = {
         border: "#e5e7eb",
       },
       fontFamily: {
-        display: ["'Space Grotesk'", "'Noto Sans SC'", "sans-serif"],
-        sans: ["'Source Sans 3'", "'Noto Sans SC'", "sans-serif"],
+        display: ["var(--font-display)", "'Noto Sans SC'", "sans-serif"],
+        sans: ["var(--font-body)", "'Noto Sans SC'", "sans-serif"],
       },
     },
   },

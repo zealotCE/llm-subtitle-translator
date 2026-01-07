@@ -15,6 +15,8 @@ export default function ImportPage() {
   const [segmentMode, setSegmentMode] = useState("post");
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
+  const [importedId, setImportedId] = useState("");
+  const [importedPath, setImportedPath] = useState("");
   const [loading, setLoading] = useState(false);
   const { t } = useI18n();
   const { pushToast } = useToast();
@@ -38,6 +40,8 @@ export default function ImportPage() {
         throw new Error(data?.message || t("import.failed"));
       }
       setMessage(`${t("import.done")}: ${data.path}`);
+      setImportedId(data.id || "");
+      setImportedPath(data.path || "");
       pushToast(t("import.done"), "success");
     } catch (err) {
       const msg = (err as Error).message || t("import.failed");
@@ -84,6 +88,7 @@ export default function ImportPage() {
                   const dropped = event.dataTransfer.files?.[0];
                   if (dropped) {
                     setFile(dropped);
+                    setMessage("");
                   }
                 }}
               >
@@ -91,7 +96,10 @@ export default function ImportPage() {
                   type="file"
                   className="hidden"
                   id="media-upload"
-                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  onChange={(event) => {
+                    setFile(event.target.files?.[0] ?? null);
+                    setMessage("");
+                  }}
                 />
                 <label htmlFor="media-upload" className="cursor-pointer rounded-full bg-neutral-900 px-4 py-2 text-white">
                   {t("import.upload")}
@@ -101,6 +109,23 @@ export default function ImportPage() {
               </div>
             </div>
             {message ? <p className="text-sm text-rose-600 md:col-span-2">{message}</p> : null}
+            {importedId ? (
+              <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600 md:col-span-2">
+                <span>{importedPath || t("import.done")}</span>
+                <a
+                  className="rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:bg-neutral-100"
+                  href={`/media/${importedId}`}
+                >
+                  {t("import.viewMedia")}
+                </a>
+                <a
+                  className="rounded-full border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:bg-neutral-100"
+                  href="/library"
+                >
+                  {t("import.viewLibrary")}
+                </a>
+              </div>
+            ) : null}
             <Button onClick={handleUpload} disabled={loading} className="md:col-span-2">
               {loading ? t("import.loading") : t("import.submit")}
             </Button>

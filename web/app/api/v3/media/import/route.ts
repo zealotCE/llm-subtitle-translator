@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import crypto from "crypto";
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
 import { getWatchDirs } from "@/lib/server/media";
@@ -53,5 +54,22 @@ export async function POST(request: Request) {
   } catch {
     // ignore
   }
-  return Response.json({ ok: true, path: destPath });
+  await triggerScan(env, watchDirs);
+  return Response.json({ ok: true, path: destPath, id: hashPath(destPath) });
+}
+
+function hashPath(value: string) {
+  return crypto.createHash("sha1").update(value).digest("hex");
+}
+
+async function triggerScan(env: Record<string, string>, watchDirs: string[]) {
+  const triggerName = env.TRIGGER_SCAN_FILE || ".scan_now";
+  if (!triggerName || !watchDirs.length) return;
+  try {
+    for (const dir of watchDirs) {
+      await fs.writeFile(path.join(dir, triggerName), "scan", "utf-8");
+    }
+  } catch {
+    // ignore
+  }
 }

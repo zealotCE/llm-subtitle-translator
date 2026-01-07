@@ -72,6 +72,7 @@ const GROUPS: Group[] = [
         options: ["deepseek-v3.2", "qwen3-max-preview", "glm-4.7", "kimi-k2-thinking"],
         allowCustom: true,
       },
+      { key: "LLM_API_KEY", labelKey: "settings.label.llmApiKey", wide: true, type: "text" },
       { key: "LLM_BASE_URL", labelKey: "settings.label.llmBaseUrl", wide: true, type: "text" },
       {
         key: "BATCH_LINES",
@@ -92,6 +93,8 @@ const GROUPS: Group[] = [
     fields: [
       { key: "OSS_ENDPOINT", labelKey: "settings.label.ossEndpoint", type: "text" },
       { key: "OSS_BUCKET", labelKey: "settings.label.ossBucket", type: "text" },
+      { key: "OSS_ACCESS_KEY_ID", labelKey: "settings.label.ossAccessKeyId", wide: true, type: "text" },
+      { key: "OSS_ACCESS_KEY_SECRET", labelKey: "settings.label.ossAccessKeySecret", wide: true, type: "text" },
       {
         key: "OSS_URL_MODE",
         labelKey: "settings.label.ossUrlMode",
@@ -106,6 +109,13 @@ const GROUPS: Group[] = [
       { key: "WEB_AUTH_ENABLED", labelKey: "settings.label.webAuthEnabled", type: "switch" },
       { key: "WEB_AUTH_USER", labelKey: "settings.label.webAuthUser", type: "text" },
       { key: "WEB_AUTH_PASSWORD", labelKey: "settings.label.webAuthPassword", type: "text" },
+    ],
+  },
+  {
+    titleKey: "settings.group.metadata",
+    fields: [
+      { key: "TMDB_API_KEY", labelKey: "settings.label.tmdbApiKey", wide: true, type: "text" },
+      { key: "BANGUMI_ACCESS_TOKEN", labelKey: "settings.label.bangumiToken", wide: true, type: "text" },
     ],
   },
 ];
@@ -181,6 +191,14 @@ export default function SettingsPage() {
                 const isSwitch = field.type === "switch";
                 const isSelect = field.type === "select";
                 const isNumber = field.type === "number";
+                const options = (field.options || []).filter((option, index, arr) => arr.indexOf(option) === index);
+                const isCustomValue = field.allowCustom && value && !options.includes(value);
+                const selectValue =
+                  isSelect && field.allowCustom
+                    ? isCustomValue
+                      ? "__custom__"
+                      : value || options[0] || ""
+                    : value || options[0] || "";
                 return (
                   <div key={field.key} className={`grid gap-2 ${field.wide ? "md:col-span-2" : ""}`}>
                     <label className="text-sm text-neutral-500">{t(field.labelKey)}</label>
@@ -202,22 +220,27 @@ export default function SettingsPage() {
                     ) : isSelect ? (
                       <div className="grid gap-2">
                         <Select
-                          value={value}
+                          value={selectValue}
                           onChange={(event) =>
                             setValues((prev) => ({
                               ...prev,
-                              [field.key]: event.target.value,
+                              [field.key]:
+                                event.target.value === "__custom__"
+                                  ? prev[field.key] || ""
+                                  : event.target.value,
                             }))
                           }
                         >
-                          {(field.options || []).map((option) => (
+                          {options.map((option) => (
                             <option key={option} value={option}>
                               {option}
                             </option>
                           ))}
-                          {field.allowCustom ? <option value={value}>{value || t("settings.option.custom")}</option> : null}
+                          {field.allowCustom ? (
+                            <option value="__custom__">{t("settings.option.custom")}</option>
+                          ) : null}
                         </Select>
-                        {field.allowCustom ? (
+                        {field.allowCustom && selectValue === "__custom__" ? (
                           <Input
                             value={value}
                             placeholder={t("settings.option.custom")}

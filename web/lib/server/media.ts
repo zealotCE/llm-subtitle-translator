@@ -12,11 +12,13 @@ export function parseDirs(raw: string) {
 }
 
 export function getWatchDirs(env: Record<string, string>) {
-  return parseDirs(env.WATCH_DIRS || "");
+  return parseDirs(env.WATCH_DIRS || process.env.WATCH_DIRS || "");
 }
 
 export function getMediaDirs(env: Record<string, string>) {
-  return parseDirs(env.WEB_MEDIA_DIRS || env.WATCH_DIRS || "");
+  return parseDirs(
+    env.WEB_MEDIA_DIRS || process.env.WEB_MEDIA_DIRS || env.WATCH_DIRS || process.env.WATCH_DIRS || ""
+  );
 }
 
 export function getOutputDir(env: Record<string, string>, videoPath: string) {
