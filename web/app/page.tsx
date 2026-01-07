@@ -120,6 +120,12 @@ export default function HomePage() {
             </CardContent>
           </Card>
         </div>
+        <div className="flex items-center justify-between text-xs text-neutral-400">
+          <span>{t("dashboard.footerHint")}</span>
+          <Link href="/logs" className="hover:text-neutral-700">
+            {t("activity.systemLogs")}
+          </Link>
+        </div>
       </section>
     </main>
   );
