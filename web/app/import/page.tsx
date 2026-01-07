@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n";
+import { useToast } from "@/components/ui/toast";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,12 @@ export default function ImportPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const { t } = useI18n();
+  const { pushToast } = useToast();
 
   const handleUpload = async () => {
     if (!file) {
       setMessage(t("import.fileRequired"));
+      pushToast(t("import.fileRequired"), "error");
       return;
     }
     setLoading(true);
@@ -35,8 +38,11 @@ export default function ImportPage() {
         throw new Error(data?.message || t("import.failed"));
       }
       setMessage(`${t("import.done")}: ${data.path}`);
+      pushToast(t("import.done"), "success");
     } catch (err) {
-      setMessage((err as Error).message || t("import.failed"));
+      const msg = (err as Error).message || t("import.failed");
+      setMessage(msg);
+      pushToast(msg, "error");
     } finally {
       setLoading(false);
     }
@@ -68,7 +74,31 @@ export default function ImportPage() {
             </div>
             <div className="grid gap-2 md:col-span-2">
               <label className="text-sm text-neutral-500">{t("import.fileLabel")}</label>
-              <input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+              <div
+                className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-neutral-300 bg-white px-6 py-8 text-sm text-neutral-500"
+                onDragOver={(event) => {
+                  event.preventDefault();
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const dropped = event.dataTransfer.files?.[0];
+                  if (dropped) {
+                    setFile(dropped);
+                  }
+                }}
+              >
+                <input
+                  type="file"
+                  className="hidden"
+                  id="media-upload"
+                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                />
+                <label htmlFor="media-upload" className="cursor-pointer rounded-full bg-neutral-900 px-4 py-2 text-white">
+                  {t("import.upload")}
+                </label>
+                <p>{file ? file.name : t("import.dragHint")}</p>
+                <p className="text-xs text-neutral-400">{t("import.sizeHint")}</p>
+              </div>
             </div>
             {message ? <p className="text-sm text-rose-600 md:col-span-2">{message}</p> : null}
             <Button onClick={handleUpload} disabled={loading} className="md:col-span-2">

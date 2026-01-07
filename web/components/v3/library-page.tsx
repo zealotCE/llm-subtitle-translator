@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/lib/i18n";
+import { useToast } from "@/components/ui/toast";
 
 type MediaItem = {
   id: string;
@@ -67,6 +68,7 @@ export default function LibraryPage() {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState("updated_desc");
   const [pageSize, setPageSize] = useState(50);
+  const { pushToast } = useToast();
 
   const filters = [
     { key: "missing_zh", label: t("library.filter.missingZh") },
@@ -85,7 +87,9 @@ export default function LibraryPage() {
     const res = await fetch(`/api/v3/media?${params.toString()}`);
     const data = await res.json();
     if (!res.ok || !data.ok) {
-      setMessage(data.message || t("common.loadFailed"));
+      const msg = data.message || t("common.loadFailed");
+      setMessage(msg);
+      pushToast(msg, "error");
       return;
     }
     setItems(data.items || []);
@@ -113,9 +117,12 @@ export default function LibraryPage() {
     const res = await fetch(`/api/v3/media/${id}/${action}`, { method: "POST" });
     const data = await res.json();
     if (!res.ok || !data.ok) {
-      setMessage(data.message || t("common.actionFailed"));
+      const msg = data.message || t("common.actionFailed");
+      setMessage(msg);
+      pushToast(msg, "error");
       return;
     }
+    pushToast(t("toast.actionTriggered"), "success");
     fetchMedia();
   };
 
@@ -126,6 +133,7 @@ export default function LibraryPage() {
   );
   const triggerScan = async () => {
     await fetch("/api/v3/scan", { method: "POST" });
+    pushToast(t("toast.scanTriggered"), "success");
     fetchMedia();
   };
   const csv = useMemo(() => {
@@ -187,12 +195,13 @@ export default function LibraryPage() {
             <option value="50">50/{t("library.pageSize")}</option>
             <option value="100">100/{t("library.pageSize")}</option>
           </select>
-          <Button variant="outline" onClick={triggerScan}>
-            {t("library.rescan")}
-          </Button>
-          <Link className={buttonVariants({ variant: "outline" })} href="/import">
-            {t("library.import")}
-          </Link>
+          <span className="text-sm text-neutral-500">
+            {t("library.count")} {total} · {t("library.filtered")} {filteredCount} · {t("library.missing")}{" "}
+            {missingZhCount}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs uppercase tracking-[0.2em] text-neutral-400">{t("library.filterTitle")}</span>
           {filters.map((filter) => (
             <Button
               key={filter.key}
@@ -202,10 +211,15 @@ export default function LibraryPage() {
               {filter.label}
             </Button>
           ))}
-          <span className="text-sm text-neutral-500">
-            {t("library.count")} {total} · {t("library.filtered")} {filteredCount} · {t("library.missing")}{" "}
-            {missingZhCount}
-          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs uppercase tracking-[0.2em] text-neutral-400">{t("library.actionsTitle")}</span>
+          <Button variant="outline" onClick={triggerScan}>
+            {t("library.rescan")}
+          </Button>
+          <Link className={buttonVariants({ variant: "outline" })} href="/import">
+            {t("library.import")}
+          </Link>
           <Button variant="ghost" onClick={() => downloadFile("media.json", JSON.stringify(items, null, 2))}>
             {t("library.exportJson")}
           </Button>

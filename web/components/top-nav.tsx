@@ -11,7 +11,6 @@ const NAV_ITEMS = [
   { href: "/import", key: "nav.import" },
   { href: "/activity", key: "nav.activity" },
   { href: "/settings", key: "nav.settings" },
-  { href: "/admin", key: "nav.advanced" },
 ];
 
 export function TopNav() {

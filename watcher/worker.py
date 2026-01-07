@@ -101,6 +101,7 @@ DELETE_OSS_OBJECT = os.getenv("DELETE_OSS_OBJECT", "false").lower() == "true"
 SAVE_RAW_JSON = os.getenv("SAVE_RAW_JSON", "false").lower() == "true"
 MOVE_DONE = os.getenv("MOVE_DONE", "false").lower() == "true"
 DONE_DIR = os.getenv("DONE_DIR", "/watch/done")
+DELETE_SOURCE_AFTER_DONE = os.getenv("DELETE_SOURCE_AFTER_DONE", "false").lower() == "true"
 OUTPUT_LANG_SUFFIX = os.getenv("OUTPUT_LANG_SUFFIX", "").strip()
 if OUTPUT_LANG_SUFFIX and not OUTPUT_LANG_SUFFIX.startswith("."):
     OUTPUT_LANG_SUFFIX = f".{OUTPUT_LANG_SUFFIX}"
@@ -4447,6 +4448,12 @@ def process_video(video_path):
         with open(done_path, "w", encoding="utf-8") as f:
             f.write("done")
         log("DONE", "处理完成", path=video_path, srt=srt_path)
+        if DELETE_SOURCE_AFTER_DONE and not MOVE_DONE:
+            try:
+                os.remove(video_path)
+                log("INFO", "已删除源视频", path=video_path)
+            except OSError as exc:
+                log("WARN", "删除源视频失败", path=video_path, error=str(exc))
     except Exception as exc:  # noqa: BLE001
         log("ERROR", "处理失败", path=video_path, error=str(exc), stage=stage)
     finally:

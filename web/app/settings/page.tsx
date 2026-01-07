@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n";
+import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/components/ui/toast";
 
 export const dynamic = "force-dynamic";
 
@@ -18,49 +21,84 @@ const GROUPS = [
   {
     titleKey: "settings.group.watch",
     fields: [
-      { key: "WATCH_DIRS", labelKey: "settings.label.watchDirs", wide: true },
-      { key: "WATCH_RECURSIVE", labelKey: "settings.label.watchRecursive" },
-      { key: "SCAN_INTERVAL", labelKey: "settings.label.scanInterval" },
-      { key: "OUTPUT_TO_SOURCE_DIR", labelKey: "settings.label.outputToSource" },
+      { key: "WATCH_DIRS", labelKey: "settings.label.watchDirs", wide: true, type: "text" },
+      { key: "WATCH_RECURSIVE", labelKey: "settings.label.watchRecursive", type: "switch" },
+      { key: "SCAN_INTERVAL", labelKey: "settings.label.scanInterval", type: "number" },
+      { key: "OUTPUT_TO_SOURCE_DIR", labelKey: "settings.label.outputToSource", type: "switch" },
+      { key: "DELETE_SOURCE_AFTER_DONE", labelKey: "settings.label.deleteSourceAfterDone", type: "switch" },
     ],
   },
   {
     titleKey: "settings.group.asr",
     fields: [
-      { key: "ASR_MODE", labelKey: "settings.label.asrMode" },
-      { key: "ASR_MODEL", labelKey: "settings.label.asrModel" },
-      { key: "LANGUAGE_HINTS", labelKey: "settings.label.languageHints", wide: true },
+      {
+        key: "ASR_MODE",
+        labelKey: "settings.label.asrMode",
+        type: "select",
+        options: ["offline", "realtime"],
+      },
+      {
+        key: "ASR_MODEL",
+        labelKey: "settings.label.asrModel",
+        type: "select",
+        options: ["paraformer-v2", "fun-asr-realtime"],
+        allowCustom: true,
+      },
+      { key: "LANGUAGE_HINTS", labelKey: "settings.label.languageHints", wide: true, type: "text" },
     ],
   },
   {
     titleKey: "settings.group.translation",
     fields: [
-      { key: "LLM_MODEL", labelKey: "settings.label.llmModel", wide: true },
-      { key: "LLM_BASE_URL", labelKey: "settings.label.llmBaseUrl", wide: true },
-      { key: "BATCH_LINES", labelKey: "settings.label.batchLines" },
-      { key: "MAX_CONCURRENT_TRANSLATIONS", labelKey: "settings.label.concurrency" },
+      {
+        key: "LLM_MODEL",
+        labelKey: "settings.label.llmModel",
+        wide: true,
+        type: "select",
+        options: ["deepseek-v3.2", "qwen3-max-preview", "glm-4.7", "kimi-k2-thinking"],
+        allowCustom: true,
+      },
+      { key: "LLM_BASE_URL", labelKey: "settings.label.llmBaseUrl", wide: true, type: "text" },
+      {
+        key: "BATCH_LINES",
+        labelKey: "settings.label.batchLines",
+        type: "select",
+        options: ["5", "10", "20", "40"],
+      },
+      {
+        key: "MAX_CONCURRENT_TRANSLATIONS",
+        labelKey: "settings.label.concurrency",
+        type: "select",
+        options: ["1", "2", "4", "8"],
+      },
     ],
   },
   {
     titleKey: "settings.group.oss",
     fields: [
-      { key: "OSS_ENDPOINT", labelKey: "settings.label.ossEndpoint" },
-      { key: "OSS_BUCKET", labelKey: "settings.label.ossBucket" },
-      { key: "OSS_URL_MODE", labelKey: "settings.label.ossUrlMode" },
+      { key: "OSS_ENDPOINT", labelKey: "settings.label.ossEndpoint", type: "text" },
+      { key: "OSS_BUCKET", labelKey: "settings.label.ossBucket", type: "text" },
+      {
+        key: "OSS_URL_MODE",
+        labelKey: "settings.label.ossUrlMode",
+        type: "select",
+        options: ["presign", "public"],
+      },
     ],
   },
   {
     titleKey: "settings.group.web",
     fields: [
-      { key: "WEB_AUTH_ENABLED", labelKey: "settings.label.webAuthEnabled" },
-      { key: "WEB_AUTH_USER", labelKey: "settings.label.webAuthUser" },
-      { key: "WEB_AUTH_PASSWORD", labelKey: "settings.label.webAuthPassword" },
+      { key: "WEB_AUTH_ENABLED", labelKey: "settings.label.webAuthEnabled", type: "switch" },
+      { key: "WEB_AUTH_USER", labelKey: "settings.label.webAuthUser", type: "text" },
+      { key: "WEB_AUTH_PASSWORD", labelKey: "settings.label.webAuthPassword", type: "text" },
     ],
   },
 ];
 
 export default function SettingsPage() {
   const { t } = useI18n();
+  const { pushToast } = useToast();
   const [values, setValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -104,8 +142,10 @@ export default function SettingsPage() {
         throw new Error(t("settings.saveFailed"));
       }
       setMessage(t("settings.saved"));
+      pushToast(t("settings.saved"), "success");
     } catch {
       setMessage(t("settings.saveFailed"));
+      pushToast(t("settings.saveFailed"), "error");
     } finally {
       setSaving(false);
     }
@@ -122,21 +162,76 @@ export default function SettingsPage() {
               <CardTitle>{t(group.titleKey)}</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
-              {group.fields.map((field) => (
-                <div key={field.key} className={`grid gap-2 ${field.wide ? "md:col-span-2" : ""}`}>
-                  <label className="text-sm text-neutral-500">{t(field.labelKey)}</label>
-                  <Input
-                    value={values[field.key] || ""}
-                    placeholder={isSensitive(field.key) ? t("settings.hidden") : ""}
-                    onChange={(event) =>
-                      setValues((prev) => ({
-                        ...prev,
-                        [field.key]: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              ))}
+              {group.fields.map((field) => {
+                const value = values[field.key] || "";
+                const isSwitch = field.type === "switch";
+                const isSelect = field.type === "select";
+                const isNumber = field.type === "number";
+                return (
+                  <div key={field.key} className={`grid gap-2 ${field.wide ? "md:col-span-2" : ""}`}>
+                    <label className="text-sm text-neutral-500">{t(field.labelKey)}</label>
+                    {isSwitch ? (
+                      <div className="flex items-center gap-3">
+                        <Switch
+                          checked={value === "true"}
+                          onCheckedChange={(checked) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              [field.key]: checked ? "true" : "false",
+                            }))
+                          }
+                        />
+                        <span className="text-xs text-neutral-500">
+                          {value === "true" ? t("settings.option.on") : t("settings.option.off")}
+                        </span>
+                      </div>
+                    ) : isSelect ? (
+                      <div className="grid gap-2">
+                        <Select
+                          value={value}
+                          onChange={(event) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              [field.key]: event.target.value,
+                            }))
+                          }
+                        >
+                          {(field.options || []).map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                          {field.allowCustom ? <option value={value}>{value || t("settings.option.custom")}</option> : null}
+                        </Select>
+                        {field.allowCustom ? (
+                          <Input
+                            value={value}
+                            placeholder={t("settings.option.custom")}
+                            onChange={(event) =>
+                              setValues((prev) => ({
+                                ...prev,
+                                [field.key]: event.target.value,
+                              }))
+                            }
+                          />
+                        ) : null}
+                      </div>
+                    ) : (
+                      <Input
+                        type={isNumber ? "number" : "text"}
+                        value={value}
+                        placeholder={isSensitive(field.key) ? t("settings.hidden") : ""}
+                        onChange={(event) =>
+                          setValues((prev) => ({
+                            ...prev,
+                            [field.key]: event.target.value,
+                          }))
+                        }
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
         ))}

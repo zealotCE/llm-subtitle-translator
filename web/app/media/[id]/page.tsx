@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AuthGuard } from "@/components/auth-guard";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
+import { useToast } from "@/components/ui/toast";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,8 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
     { id: string; kind: string; path: string; lang?: string; updated_at?: number; size?: number }[]
   >([]);
   const [preview, setPreview] = useState("");
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [meta, setMeta] = useState<MetadataForm>({
     title_original: "",
     title_zh: "",
@@ -83,6 +86,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
   const [metaJson, setMetaJson] = useState("{}");
   const [metaMessage, setMetaMessage] = useState("");
   const { t } = useI18n();
+  const { pushToast } = useToast();
 
   const fetchDetail = async () => {
     const res = await fetch(`/api/v3/media/${params.id}`);
@@ -128,15 +132,32 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
     setMetaJson(JSON.stringify(value, null, 2));
   };
   const fetchPreview = async (sid: string) => {
+    if (previewId === sid) {
+      setPreviewId(null);
+      setPreview("");
+      setPreviewLoading(false);
+      return;
+    }
+    setPreviewLoading(true);
     const res = await fetch(`/api/v3/media/${params.id}/subtitles/${sid}`);
     const data = await res.json();
     if (data.ok) {
       setPreview(data.content || "");
+      setPreviewId(sid);
+    } else {
+      pushToast(data.message || t("common.loadFailed"), "error");
     }
+    setPreviewLoading(false);
   };
 
   const triggerAction = async (action: "retry" | "translate" | "archive" | "unarchive") => {
-    await fetch(`/api/v3/media/${params.id}/${action}`, { method: "POST" });
+    const res = await fetch(`/api/v3/media/${params.id}/${action}`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      pushToast(data.message || t("common.actionFailed"), "error");
+      return;
+    }
+    pushToast(t("toast.actionTriggered"), "success");
     fetchDetail();
   };
 
@@ -234,46 +255,50 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
             <div className="mt-3 space-y-2 text-sm text-neutral-600">
               {subtitleList.length ? (
                 subtitleList.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium text-neutral-900" title={item.path}>
-                        {fileName(item.path)}
+                  <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white/70 px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-neutral-900" title={item.path}>
+                          {fileName(item.path)}
+                        </div>
+                        <div className="text-xs text-neutral-500">
+                          {kindLabel(item.kind)}
+                          {item.lang ? ` · ${item.lang}` : ""}
+                          {item.updated_at ? ` · ${new Date(item.updated_at * 1000).toLocaleString()}` : ""}
+                          {item.size ? ` · ${formatSize(item.size)}` : ""}
+                        </div>
                       </div>
-                      <div className="text-xs text-neutral-500">
-                        {kindLabel(item.kind)}
-                        {item.lang ? ` · ${item.lang}` : ""}
-                        {item.updated_at ? ` · ${new Date(item.updated_at * 1000).toLocaleString()}` : ""}
-                        {item.size ? ` · ${formatSize(item.size)}` : ""}
+                      <div className="flex gap-2">
+                        <a
+                          className={buttonVariants({ size: "sm", variant: "outline" })}
+                          href={`/api/v3/media/${media.id}/subtitles/${item.id}/download`}
+                        >
+                          {t("common.download")}
+                        </a>
+                        <Link
+                          className={buttonVariants({ size: "sm", variant: "outline" })}
+                          href={`/media/${media.id}/editor`}
+                        >
+                          {t("common.edit")}
+                        </Link>
+                        <Button size="sm" variant="ghost" onClick={() => fetchPreview(item.id)}>
+                          {previewId === item.id ? t("common.close") : t("common.preview")}
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <a
-                        className={buttonVariants({ size: "sm", variant: "outline" })}
-                        href={`/api/v3/media/${media.id}/subtitles/${item.id}/download`}
-                      >
-                        {t("common.download")}
-                      </a>
-                      <Link
-                        className={buttonVariants({ size: "sm", variant: "outline" })}
-                        href={`/media/${media.id}/editor`}
-                      >
-                        {t("common.edit")}
-                      </Link>
-                      <Button size="sm" variant="ghost" onClick={() => fetchPreview(item.id)}>
-                        {t("common.preview")}
-                      </Button>
-                    </div>
+                    {previewId === item.id ? (
+                      <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3 text-xs text-neutral-600">
+                        {previewLoading ? (
+                          <p>{t("common.loading")}</p>
+                        ) : (
+                          <pre className="whitespace-pre-wrap">{preview}</pre>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 ))
               ) : (
                 <p>{t("media.subtitles.empty")}</p>
-              )}
-            </div>
-            <div className="mt-4 rounded-xl border border-border/60 bg-white p-3 text-xs text-neutral-600">
-              {preview ? (
-                <pre className="whitespace-pre-wrap">{preview}</pre>
-              ) : (
-                <p>{t("media.subtitles.previewHint")}</p>
               )}
             </div>
           </div>
