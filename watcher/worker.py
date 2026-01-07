@@ -2,12 +2,12 @@ import hashlib
 import json
 import os
 import queue
+import threading
 import re
 import shutil
 import sqlite3
 import subprocess
 import signal
-import threading
 import time
 import uuid
 import xml.etree.ElementTree as ET
@@ -208,6 +208,7 @@ if not LOG_DIR:
     LOG_DIR = os.path.join(OUT_DIR, "logs")
 LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "worker.log").strip()
 LOG_LOCK = threading.Lock()
+RUN_LOG_CONTEXT = threading.local()
 
 CACHE_DIR = os.path.join(OUT_DIR, "cache")
 CACHE_DB = os.path.join(CACHE_DIR, "translate_cache.db")
@@ -761,6 +762,16 @@ def log(level, message, **kwargs):
                     f.write(line + "\n")
         except Exception:  # noqa: BLE001
             pass
+    run_log_path = getattr(RUN_LOG_CONTEXT, "path", "")
+    if run_log_path:
+        try:
+            os.makedirs(os.path.dirname(run_log_path), exist_ok=True)
+            line = json.dumps(record, ensure_ascii=False)
+            with LOG_LOCK:
+                with open(run_log_path, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def ensure_dirs():
@@ -796,6 +807,28 @@ def output_paths(name, out_dir):
     lock_path = os.path.join(out_dir, f"{suffix_name}.lock")
     raw_path = os.path.join(out_dir, f"{suffix_name}.raw.json")
     return srt_path, done_path, lock_path, raw_path
+
+
+def _run_log_token(video_path):
+    return hashlib.sha1(video_path.encode("utf-8")).hexdigest()[:8]
+
+
+def _run_log_paths(video_path, out_dir, run_id):
+    token = _run_log_token(video_path)
+    name = base_name(video_path)
+    log_dir = LOG_DIR or out_dir
+    log_path = os.path.join(log_dir, f"{name}.{token}.run.{run_id}.log")
+    meta_path = os.path.join(out_dir, f"{name}.{token}.run.json")
+    return log_path, meta_path
+
+
+def _write_run_meta(path, data):
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def should_collect_eval(video_path):
@@ -3965,15 +3998,31 @@ def process_video(video_path):
     object_key = None
     bucket = None
     vocab_id = None
+    run_started_at = int(time.time())
+    run_id = f"{run_started_at}-{uuid.uuid4().hex[:6]}"
+    run_log_path, run_meta_path = _run_log_paths(video_path, out_dir, run_id)
 
     stage = "init"
     try:
+        RUN_LOG_CONTEXT.path = run_log_path
+        _write_run_meta(
+            run_meta_path,
+            {
+                "run_id": run_id,
+                "path": video_path,
+                "status": "running",
+                "stage": stage,
+                "started_at": run_started_at,
+                "log_path": run_log_path,
+            },
+        )
         log(
             "INFO",
             "开始处理",
             path=video_path,
             asr_mode=asr_mode,
             segment_mode=segment_mode,
+            run_id=run_id,
         )
         stage = "probe"
 
@@ -4508,6 +4557,18 @@ def process_video(video_path):
         with open(done_path, "w", encoding="utf-8") as f:
             f.write("done")
         log("DONE", "处理完成", path=video_path, srt=srt_path)
+        _write_run_meta(
+            run_meta_path,
+            {
+                "run_id": run_id,
+                "path": video_path,
+                "status": "done",
+                "stage": stage,
+                "started_at": run_started_at,
+                "finished_at": int(time.time()),
+                "log_path": run_log_path,
+            },
+        )
         if DELETE_SOURCE_AFTER_DONE and not MOVE_DONE:
             try:
                 os.remove(video_path)
@@ -4516,7 +4577,22 @@ def process_video(video_path):
                 log("WARN", "删除源视频失败", path=video_path, error=str(exc))
     except Exception as exc:  # noqa: BLE001
         log("ERROR", "处理失败", path=video_path, error=str(exc), stage=stage)
+        _write_run_meta(
+            run_meta_path,
+            {
+                "run_id": run_id,
+                "path": video_path,
+                "status": "failed",
+                "stage": stage,
+                "error": str(exc),
+                "started_at": run_started_at,
+                "finished_at": int(time.time()),
+                "log_path": run_log_path,
+            },
+        )
     finally:
+        if getattr(RUN_LOG_CONTEXT, "path", "") == run_log_path:
+            RUN_LOG_CONTEXT.path = ""
         remove_lock(lock_path)
         try:
             if os.path.exists(tmp_wav):

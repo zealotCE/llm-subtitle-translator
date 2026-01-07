@@ -12,6 +12,7 @@ type RunItem = {
   media_id: string;
   media_title?: string;
   media_path?: string;
+  stage?: string;
   outputs?: {
     raw?: { id: string; path: string };
     zh?: { id: string; path: string };
@@ -70,6 +71,18 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
       "处理失败": "处理失败",
     };
     return mapping[message] || message;
+  };
+  const stageKeyLabel = (key?: string) => {
+    if (!key) return "-";
+    const mapping: Record<string, string> = {
+      init: "初始化",
+      probe: "媒体探测",
+      subtitle_select: "字幕选择",
+      asr_prepare: "ASR 准备",
+      asr_call: "ASR 识别",
+      translate: "翻译",
+    };
+    return mapping[key] || key;
   };
 
   const fetchRun = async () => {
@@ -169,6 +182,9 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
               </div>
             ) : null}
             {run.error ? <div className="text-rose-600">Error: {run.error}</div> : null}
+            {run.status === "failed" && run.stage ? (
+              <div className="text-rose-600">失败阶段: {stageKeyLabel(run.stage)}</div>
+            ) : null}
             {run.log_ref ? <div>Log: {run.log_ref}</div> : null}
           </div>
         ) : (

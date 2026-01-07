@@ -2,7 +2,7 @@ import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
 import { resolvePath } from "@/lib/server/env";
-import { getMediaDirs, getOutputDir, scanVideos } from "@/lib/server/media";
+import { getMediaDirs, getOutputDir, loadRunMeta, scanVideos } from "@/lib/server/media";
 import type {
   ActivityItem,
   MediaItem,
@@ -53,6 +53,7 @@ export async function scanAndSync(env: Record<string, string>) {
     const failedLog = findTranslateFailedLog(env, item.path);
     const status = resolveStatus(env, item.path, outputs, existing?.archived || false);
     const completionTs = computeCompletionTimestamp(env, item.path, outputs, failedLog);
+    const runMeta = await loadRunMeta(env, item.path);
     if (!existing) {
       state.media[id] = {
         id,
@@ -100,7 +101,7 @@ export async function scanAndSync(env: Record<string, string>) {
       const changed = existing.status !== status || outputsChanged(existing.outputs, outputs);
       if (changed) {
         const updated = { ...existing, status, outputs, updated_at: now };
-        const result = syncRunForStatus(state, updated, status, now, failedLog, completionTs);
+        const result = syncRunForStatus(state, updated, status, now, failedLog, completionTs, runMeta);
         state.media[id] = { ...updated, last_run_id: result.lastRunId };
         if (existing.status !== status) {
           state.activity.unshift({
@@ -121,8 +122,11 @@ export async function scanAndSync(env: Record<string, string>) {
         }
       } else {
         state.media[id] = { ...existing, outputs };
-        if ((status === "done" || status === "failed") && completionTs && existing.last_run_id) {
-          adjustRunTiming(state, existing.last_run_id, completionTs);
+        if ((status === "done" || status === "failed") && existing.last_run_id) {
+          const finalTs = (runMeta?.finished_at as number | undefined) || completionTs;
+          if (finalTs) {
+            adjustRunTiming(state, existing.last_run_id, finalTs);
+          }
         }
       }
     }
@@ -416,22 +420,40 @@ function syncRunForStatus(
   status: MediaStatus,
   now: number,
   failedLog?: string,
-  completionTs?: number
+  completionTs?: number,
+  runMeta?: Record<string, unknown> | null
 ) {
   let lastRunId = media.last_run_id;
+  const metaLog = typeof runMeta?.log_path === "string" ? (runMeta.log_path as string) : "";
+  const metaStarted =
+    typeof runMeta?.started_at === "number" ? (runMeta.started_at as number) : undefined;
+  const metaFinished =
+    typeof runMeta?.finished_at === "number" ? (runMeta.finished_at as number) : undefined;
+  const metaError = typeof runMeta?.error === "string" ? (runMeta.error as string) : undefined;
+  const metaStage = typeof runMeta?.stage === "string" ? (runMeta.stage as string) : undefined;
   if (status === "running") {
     const run = appendRun(state, media.id, "pipeline", "running");
+    if (metaStarted) {
+      run.started_at = metaStarted;
+    }
+    if (metaLog) {
+      run.log_ref = metaLog;
+    }
+    if (metaStage) {
+      run.stage = metaStage;
+    }
     lastRunId = run.id;
   } else if (status === "done" || status === "failed") {
-    const finishedAt = completionTs ? Math.min(now, completionTs) : now;
+    const finishedAt = metaFinished || (completionTs ? Math.min(now, completionTs) : now);
     if (lastRunId && state.runs[lastRunId]) {
       const run = state.runs[lastRunId];
       if (run.status === "running") {
         state.runs[lastRunId] = {
           ...run,
           status: status === "done" ? "done" : "failed",
-          error: status === "failed" ? "translate_failed" : undefined,
-          log_ref: status === "failed" ? failedLog || run.log_ref : run.log_ref,
+          error: status === "failed" ? metaError || "translate_failed" : undefined,
+          log_ref: metaLog || (status === "failed" ? failedLog || run.log_ref : run.log_ref),
+          stage: metaStage || run.stage,
           finished_at: Math.max(run.started_at, finishedAt),
         };
       } else if (completionTs && run.finished_at) {
@@ -440,14 +462,23 @@ function syncRunForStatus(
       }
     } else {
       const run = appendRun(state, media.id, "pipeline", status === "done" ? "done" : "failed");
-      if (completionTs) {
+      if (metaStarted) {
+        run.started_at = metaStarted;
+      }
+      if (!metaStarted && completionTs) {
         run.started_at = completionTs;
         run.finished_at = completionTs;
       }
+      if (metaFinished) {
+        run.finished_at = metaFinished;
+      }
       if (status === "failed") {
-        run.error = "translate_failed";
-        run.log_ref = failedLog || "";
+        run.error = metaError || "translate_failed";
+        run.log_ref = metaLog || failedLog || "";
         state.runs[run.id] = run;
+      }
+      if (metaStage) {
+        run.stage = metaStage;
       }
       lastRunId = run.id;
     }

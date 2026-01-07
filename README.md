@@ -10,6 +10,7 @@
 ## 目录结构
 - `watch/`：待处理视频
 - `output/`：输出字幕与标记文件
+- `logs/`：运行日志（默认输出到 `worker.log`，可配置 `LOG_DIR`）
 - `watcher/`：处理服务代码
 - `docs/FAQ.md`：常见问题
 
@@ -56,7 +57,21 @@ docker compose pull
 docker compose up -d
 ```
 
-### Web 设置页（可选）
+### Web UI（推荐）
+新 UI 位于 `web/`，提供媒体库、活动、设置、字幕预览/编辑与强制运行选项。
+
+- **强制运行**：检测到内嵌/外挂字幕时弹出确认，可选择“跳过简体检测/强制翻译/强制 ASR/优先复用”
+
+Docker 运行（示例）：
+
+```bash
+docker compose up -d web
+```
+
+Web 读取根目录 `.env`，并会访问 `WATCH_DIRS/OUT_DIR/LOG_DIR` 指向的目录，请确保 compose 中已挂载对应卷。
+如启用 `WEB_AUTH_ENABLED=true`，先访问 `http://localhost:3000/login` 登录。
+
+### Legacy Web 设置页（可选）
 包含设置页与简单的上传/任务列表页面，保存后需手动重启服务才会生效。
 
 ```bash
@@ -107,26 +122,6 @@ docker run --rm -p 8000:8000 \
 - `WEB_AUTH_COOKIE`：Cookie 名称（默认 `autosub_auth`）
 - `WEB_AUTH_TTL`：登录有效期（秒，默认 `86400`）
 
-### Web UI（shadcn/ui，预览）
-新 UI 位于 `web/`，提供设置/任务/日志/媒体/字幕/元数据等基础能力。
-
-本地运行：
-
-```bash
-cd web
-npm install
-npm run dev
-```
-
-Docker 运行（示例）：
-
-```bash
-docker compose up -d web
-```
-
-Web 读取根目录 `.env`，并会访问 `WATCH_DIRS/OUT_DIR/LOG_DIR` 指向的目录，请确保 compose 中已挂载对应卷。
-如启用 `WEB_AUTH_ENABLED=true`，先访问 `http://localhost:3000/login` 登录。
-
 Legacy 的 `watcher/web.py` 仍可继续使用。
 
 上传页会为每个文件生成同名任务覆盖文件 `<name>.job.json`，可手工编辑：
@@ -156,6 +151,11 @@ Legacy 的 `watcher/web.py` 仍可继续使用。
 - `WORKER_CONCURRENCY`：处理线程数（默认 `1`）
 - `MAX_ACTIVE_JOBS`：同时处理的任务上限（默认 `WORKER_CONCURRENCY`）
 - `FFMPEG_CONCURRENCY`：FFmpeg 并发上限（默认 `1`）
+
+### 运行日志与运行记录
+- 全局日志：`LOG_DIR/worker.log`
+- 单次运行日志：`<name>.<hash>.run.<run_id>.log`
+- 运行记录：`<name>.<hash>.run.json`（包含 run_id、阶段、状态、日志路径）
 
 ### 手动触发扫描
 

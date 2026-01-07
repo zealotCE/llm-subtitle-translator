@@ -28,15 +28,22 @@ export async function GET(request: Request, context: { params: { runId: string }
     use_existing_subtitle: env.USE_EXISTING_SUBTITLE || "",
     ignore_simplified_subtitle: env.IGNORE_SIMPLIFIED_SUBTITLE || "",
   };
-  const stages = media ? await extractStages(env, media.path, run.started_at) : [];
+  const stages = media ? await extractStages(env, media.path, run.started_at, run.log_ref || "") : [];
   return Response.json({ ok: true, run: enriched, pipeline, stages });
 }
 
 type StageEvent = { ts: number; message: string; level?: string };
 
-async function extractStages(env: Record<string, string>, mediaPath: string, startedAt: number) {
+async function extractStages(
+  env: Record<string, string>,
+  mediaPath: string,
+  startedAt: number,
+  runLogPath: string
+) {
   const logFile = env.LOG_FILE_NAME || "worker.log";
-  const logPaths = await resolveLogPaths(env, logFile);
+  const logPaths = runLogPath
+    ? [runLogPath]
+    : await resolveLogPaths(env, logFile);
   if (!logPaths.length) {
     return [];
   }

@@ -18,6 +18,7 @@
      | (inotify + 定时扫描)
      v
 [watcher/worker.py]
+     |-- 独立运行日志（每次 run 单独文件）
      |-- 媒体探测 (ffprobe)
      |-- 音轨选择
      |-- 字幕选择/复用
@@ -39,7 +40,9 @@
 - `watch/`：待处理视频
 - `output/`：中间产物/缓存（若 `OUTPUT_TO_SOURCE_DIR=false`）
 - `watcher/`：主处理服务
+- `logs/`：全局日志输出目录（`worker.log`）
 - `docs/`：文档
+- `web/`：Web UI（媒体库/活动/设置/字幕）
 
 Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 
@@ -97,6 +100,8 @@ Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 - 双语：`name.bi.srt`（可选）
 - 标记：`name.done`
 - 失败日志：`name.translate_failed*.log`
+- 运行记录：`name.<hash>.run.json`
+- 单次运行日志：`name.<hash>.run.<run_id>.log`
 
 ## 关键设计决策
 
@@ -104,6 +109,7 @@ Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 - **字幕复用策略化**：复用/参考/忽略可切换
 - **二次切片 + 合并短句**：减少残句，提高翻译上下文
 - **错误隔离**：单文件失败不阻塞整体服务
+- **独立运行日志**：每次运行独立 log，便于定位阶段失败
 - **配置化与无密钥内置**：所有密钥由 `.env` 注入
 
 ## 扩展点

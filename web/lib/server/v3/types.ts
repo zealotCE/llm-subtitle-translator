@@ -41,6 +41,7 @@ export type RunItem = {
   started_at: number;
   finished_at?: number;
   error?: string;
+  stage?: string;
   log_ref?: string;
 };
 

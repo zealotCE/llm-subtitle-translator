@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import crypto from "crypto";
 
 const VIDEO_EXTS = new Set([".mp4", ".mkv", ".webm", ".mov", ".avi"]);
 const SUBTITLE_EXTS = new Set([".srt", ".ass", ".ssa", ".vtt", ".sub", ".sup"]);
@@ -85,6 +86,28 @@ export async function detectSubtitleHints(env: Record<string, string>, videoPath
     embedded_count: embeddedCount,
     has_subtitle: external.length > 0 || embeddedCount > 0,
   };
+}
+
+export async function loadRunMeta(env: Record<string, string>, videoPath: string) {
+  const outDir = getOutputDir(env, videoPath);
+  if (!outDir) return null;
+  const metaPath = runMetaPathFor(videoPath, outDir);
+  try {
+    const raw = await fs.readFile(metaPath, "utf-8");
+    const data = JSON.parse(raw);
+    if (data && typeof data === "object") {
+      return data as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export function runMetaPathFor(videoPath: string, outDir: string) {
+  const base = path.basename(videoPath, path.extname(videoPath));
+  const token = crypto.createHash("sha1").update(videoPath).digest("hex").slice(0, 8);
+  return path.join(outDir, `${base}.${token}.run.json`);
 }
 
 async function findExternalSubtitles(env: Record<string, string>, videoPath: string) {
