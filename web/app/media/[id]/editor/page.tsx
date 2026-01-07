@@ -140,7 +140,7 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
         <div className="grid gap-6 md:grid-cols-[280px,1fr]">
           <div className="glass-panel rounded-2xl p-3 text-sm text-dune">
             {filteredIndices.length ? (
-              filteredIndices.map((idx) => {
+              filteredIndices.map((idx: number) => {
                 const block = blocks[idx];
                 return (
                 <button
