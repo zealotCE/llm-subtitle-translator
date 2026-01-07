@@ -3,6 +3,7 @@ import path from "path";
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
 import { appendActivity, appendRun, loadState, saveState } from "@/lib/server/v3/store";
+import { logEvent } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,7 @@ export async function POST(request: Request, context: { params: { runId: string 
     message: "重试运行",
     created_at: media.updated_at,
   });
+  await logEvent(env, "INFO", "重试运行", { media_id: media.id, run_id: newRun.id });
   await saveState(state);
   await triggerScan(env);
   return Response.json({ ok: true, run: newRun });

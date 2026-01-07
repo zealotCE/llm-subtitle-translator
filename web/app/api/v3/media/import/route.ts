@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
 import { getWatchDirs } from "@/lib/server/media";
+import { logEvent } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 
@@ -55,7 +56,9 @@ export async function POST(request: Request) {
     // ignore
   }
   await triggerScan(env, watchDirs);
-  return Response.json({ ok: true, path: destPath, id: hashPath(destPath) });
+  const mediaId = hashPath(destPath);
+  await logEvent(env, "INFO", "导入媒体", { media_id: mediaId, path: destPath });
+  return Response.json({ ok: true, path: destPath, id: mediaId });
 }
 
 function hashPath(value: string) {

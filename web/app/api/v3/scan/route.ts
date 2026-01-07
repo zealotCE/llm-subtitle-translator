@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
+import { logEvent } from "@/lib/server/logger";
 
 export const runtime = "nodejs";
 
@@ -31,5 +32,6 @@ export async function POST(request: Request) {
   if (errors.length) {
     return Response.json({ ok: false, message: errors.join("; ") }, { status: 500 });
   }
+  await logEvent(env, "INFO", "触发扫描");
   return Response.json({ ok: true });
 }
