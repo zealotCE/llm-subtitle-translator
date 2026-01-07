@@ -9,6 +9,7 @@ services:
     volumes:
       - ./watch:/watch
       - ./output:/output
+      - ./test_video:/test_video
     restart: unless-stopped
   web:
     build: ./web
@@ -20,10 +21,12 @@ services:
     environment:
       - WEB_PROJECT_ROOT=/app
       - WEB_CONFIG_PATH=.env
+      - WEB_MEDIA_DIRS=/test_video,/watch
     volumes:
       - ./.env:/app/.env
       - ./.web:/app/.web
       - ./watch:/watch
+      - ./test_video:/test_video
       - ./output:/output
       - ./logs:/app/logs
     restart: unless-stopped
