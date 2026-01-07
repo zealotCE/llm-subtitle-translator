@@ -176,11 +176,8 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
     media.outputs.bi ? { label: "bi", path: media.outputs.bi.path } : null,
     ...(media.outputs.other || []).map((item) => ({ label: "other", path: item.path })),
   ]
-    .filter(Boolean)
-    .map((item) => ({ label: kindLabel(item.label), path: item.path })) as {
-    label: string;
-    path: string;
-  }[];
+    .filter((item): item is { label: string; path: string } => Boolean(item))
+    .map((item) => ({ label: kindLabel(item.label), path: item.path }));
 
   return (
     <main className="min-h-screen px-6 py-10">
