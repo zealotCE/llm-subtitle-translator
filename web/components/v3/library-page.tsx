@@ -86,7 +86,8 @@ export default function LibraryPage() {
   const router = useRouter();
   const { t } = useI18n();
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [total, setTotal] = useState(0);
   const [message, setMessage] = useState("");
@@ -106,7 +107,7 @@ export default function LibraryPage() {
   const fetchMedia = async () => {
     const params = new URLSearchParams();
     if (query) params.set("query", query);
-    if (selected.length) params.set("filter", selected.join(","));
+    if (selectedFilters.length) params.set("filter", selectedFilters.join(","));
     params.set("page", String(page));
     params.set("page_size", String(pageSize));
     params.set("sort", sort);
@@ -146,18 +147,30 @@ export default function LibraryPage() {
       fetchMedia();
     }, 200);
     return () => clearTimeout(handle);
-  }, [query, selected]);
+  }, [query, selectedFilters]);
 
   useEffect(() => {
     const handle = window.setInterval(() => {
       fetchMedia();
     }, 10000);
     return () => window.clearInterval(handle);
-  }, [query, selected, page, sort, pageSize]);
+  }, [query, selectedFilters, page, sort, pageSize]);
 
   const toggleFilter = (key: string) => {
-    setSelected((prev) => (prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]));
+    setSelectedFilters((prev) => (prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]));
     setPage(1);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === items.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(items.map((item) => item.id));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
   };
 
   const handleAction = async (id: string, action: "archive" | "unarchive" | "retry" | "translate") => {
@@ -177,6 +190,19 @@ export default function LibraryPage() {
       setItems((prev) => prev.map((item) => (item.id === id ? data.media : item)));
     }
     pushToast(t("toast.actionTriggered"), "success");
+  };
+
+  const handleBulkAction = async (action: "archive" | "unarchive" | "retry" | "translate") => {
+    if (!selectedIds.length) return;
+    let done = 0;
+    setMessage(`${t("library.bulkRunning")} 0/${selectedIds.length}`);
+    for (const id of selectedIds) {
+      await handleAction(id, action);
+      done += 1;
+      setMessage(`${t("library.bulkRunning")} ${done}/${selectedIds.length}`);
+    }
+    setMessage(`${t("library.bulkDone")} ${selectedIds.length}`);
+    setSelectedIds([]);
   };
 
   const filteredCount = items.length;
@@ -256,7 +282,7 @@ export default function LibraryPage() {
           {filters.map((filter) => (
             <Button
               key={filter.key}
-              variant={selected.includes(filter.key) ? "default" : "outline"}
+              variant={selectedFilters.includes(filter.key) ? "default" : "outline"}
               onClick={() => toggleFilter(filter.key)}
             >
               {filter.label}
@@ -287,10 +313,35 @@ export default function LibraryPage() {
             {t("library.exportMissingCsv")}
           </Button>
         </div>
-        {message ? <p className="text-sm text-rose-600">{message}</p> : null}
+        {selectedIds.length ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
+            <span>{`${t("library.bulkSelected")} ${selectedIds.length}`}</span>
+            <Button size="sm" variant="outline" onClick={() => handleBulkAction("retry")}>
+              {t("library.bulkRetry")}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => handleBulkAction("translate")}>
+              {t("library.bulkTranslate")}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => handleBulkAction("archive")}>
+              {t("library.bulkArchive")}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>
+              {t("library.bulkClear")}
+            </Button>
+          </div>
+        ) : null}
+        {message ? <p className="text-sm text-neutral-600">{message}</p> : null}
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10">
+                <input
+                  type="checkbox"
+                  checked={items.length > 0 && selectedIds.length === items.length}
+                  onChange={toggleSelectAll}
+                  onClick={(event) => event.stopPropagation()}
+                />
+              </TableHead>
               <TableHead>{t("library.table.title")}</TableHead>
               <TableHead>{t("library.table.status")}</TableHead>
               <TableHead>{t("library.table.subtitles")}</TableHead>
@@ -305,6 +356,13 @@ export default function LibraryPage() {
                   className="cursor-pointer transition hover:bg-neutral-50"
                   onClick={() => router.push(`/media/${item.id}`)}
                 >
+                  <TableCell onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(item.id)}
+                      onChange={() => toggleSelect(item.id)}
+                    />
+                  </TableCell>
                   <TableCell className="max-w-md truncate">
                     <div className="font-medium text-neutral-900">{item.title}</div>
                     <div className="text-xs text-neutral-500 truncate" title={item.path}>
@@ -349,7 +407,7 @@ export default function LibraryPage() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={4}>{t("library.empty")}</TableCell>
+                <TableCell colSpan={5}>{t("library.empty")}</TableCell>
               </TableRow>
             )}
           </TableBody>

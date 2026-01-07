@@ -61,6 +61,7 @@ docker compose up -d
 新 UI 位于 `web/`，提供媒体库、活动、设置、字幕预览/编辑与强制运行选项。
 
 - **强制运行**：检测到内嵌/外挂字幕时弹出确认，可选择“跳过简体检测/强制翻译/强制 ASR/优先复用”
+- **配置版本**：设置页支持保存/应用版本与导入导出 JSON
 
 Docker 运行（示例）：
 
@@ -114,6 +115,7 @@ docker run --rm -p 8000:8000 \
 - `WEB_MEDIA_SCAN_CACHE_PATH`：媒体库扫描缓存路径（默认 `.web/media_scan_cache.json`）
 - `WEB_FFPROBE_CACHE_TTL`：ffprobe 缓存 TTL 秒（默认 `3600`，`0` 关闭缓存）
 - `WEB_FFPROBE_CACHE_PATH`：ffprobe 缓存路径（默认 `.web/ffprobe_cache.json`）
+- `WEB_CONFIG_VERSIONS_PATH`：配置版本存储路径（默认 `.web/config_versions.json`）
 - `WEB_ARCHIVE_DIR`：归档目录（设置后归档会移动文件）
 - `WEB_ALLOW_DELETE`：允许删除媒体文件（默认 `false`）
 - `WEB_METADATA_DIR`：人工元数据保存目录（默认 `metadata`）

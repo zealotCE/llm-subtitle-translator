@@ -60,3 +60,9 @@ LLM_TITLE_ALIAS_ENABLED=false
 
 - Web 侧支持扫描缓存（`WEB_MEDIA_SCAN_CACHE_TTL`），在短时间内复用扫描结果
 - 如果需要每次都全量扫描，把 `WEB_MEDIA_SCAN_CACHE_TTL=0`
+
+## 如何保存/切换配置版本？
+
+- 设置页「配置版本」可以保存当前配置为命名版本
+- 可从列表中选择版本并应用
+- 支持导入/导出 JSON

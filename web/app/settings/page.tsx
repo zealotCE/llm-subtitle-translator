@@ -128,6 +128,10 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [advanced, setAdvanced] = useState(false);
+  const [versions, setVersions] = useState<{ name: string; created_at: number }[]>([]);
+  const [versionName, setVersionName] = useState("");
+  const [selectedVersion, setSelectedVersion] = useState("");
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -148,6 +152,18 @@ export default function SettingsPage() {
     return () => {
       active = false;
     };
+  }, []);
+
+  const loadVersions = async () => {
+    const res = await fetch("/api/v3/settings/versions");
+    const data = await res.json();
+    if (data.ok) {
+      setVersions(data.versions || []);
+    }
+  };
+
+  useEffect(() => {
+    loadVersions();
   }, []);
 
   const entries = useMemo(() => Object.entries(values).sort(([a], [b]) => a.localeCompare(b)), [values]);
@@ -172,6 +188,89 @@ export default function SettingsPage() {
       pushToast(t("settings.saveFailed"), "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveVersion = async () => {
+    if (!versionName.trim()) {
+      pushToast(t("settings.versionNameRequired"), "error");
+      return;
+    }
+    const res = await fetch("/api/v3/settings/versions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "save", name: versionName.trim(), values }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      pushToast(data.message || t("settings.saveFailed"), "error");
+      return;
+    }
+    pushToast(t("settings.versionSaved"), "success");
+    setSelectedVersion(versionName.trim());
+    setVersionName("");
+    loadVersions();
+  };
+
+  const handleLoadVersion = async () => {
+    if (!selectedVersion) return;
+    const res = await fetch("/api/v3/settings/versions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "load", name: selectedVersion }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      pushToast(data.message || t("settings.loadFailed"), "error");
+      return;
+    }
+    setValues(data.values || {});
+    pushToast(t("settings.versionLoaded"), "success");
+  };
+
+  const handleDeleteVersion = async () => {
+    if (!selectedVersion) return;
+    const res = await fetch("/api/v3/settings/versions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", name: selectedVersion }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      pushToast(data.message || t("settings.saveFailed"), "error");
+      return;
+    }
+    setSelectedVersion("");
+    loadVersions();
+    pushToast(t("settings.versionDeleted"), "success");
+  };
+
+  const exportJson = () => {
+    const blob = new Blob([JSON.stringify(values, null, 2)], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "settings.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importJson = async (file: File | null) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const content = await file.text();
+      const data = JSON.parse(content);
+      if (data && typeof data === "object") {
+        setValues(data as Record<string, string>);
+        pushToast(t("settings.imported"), "success");
+      }
+    } catch {
+      pushToast(t("settings.importFailed"), "error");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -272,6 +371,58 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         ))}
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("settings.versionTitle")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              <Input
+                value={versionName}
+                placeholder={t("settings.versionName")}
+                onChange={(event) => setVersionName(event.target.value)}
+              />
+              <Button variant="outline" onClick={handleSaveVersion}>
+                {t("settings.versionSave")}
+              </Button>
+              <Button variant="outline" onClick={exportJson}>
+                {t("settings.exportJson")}
+              </Button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <Select
+                value={selectedVersion}
+                onChange={(event) => setSelectedVersion(event.target.value)}
+              >
+                <option value="">{t("settings.versionSelect")}</option>
+                {versions.map((item) => (
+                  <option key={item.name} value={item.name}>
+                    {item.name}
+                  </option>
+                ))}
+              </Select>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={handleLoadVersion}>
+                  {t("settings.versionApply")}
+                </Button>
+                <Button variant="ghost" onClick={handleDeleteVersion}>
+                  {t("settings.versionDelete")}
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <label className="inline-flex cursor-pointer items-center rounded-full border border-border bg-white px-4 py-2 text-sm">
+                  <input
+                    type="file"
+                    accept="application/json"
+                    className="hidden"
+                    onChange={(event) => importJson(event.target.files?.[0] || null)}
+                  />
+                  {importing ? t("settings.importing") : t("settings.importJson")}
+                </label>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader>
             <CardTitle>{t("settings.advanced")}</CardTitle>
