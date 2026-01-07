@@ -29,6 +29,19 @@ type RunItem = {
   error?: string;
 };
 
+type MetadataForm = {
+  title_original: string;
+  title_zh: string;
+  title_en: string;
+  season: string;
+  episode: string;
+  type: string;
+  year: string;
+  language_hints: string;
+  glossary: string;
+  notes: string;
+};
+
 export default function MediaDetailPage({ params }: { params: { id: string } }) {
   const [media, setMedia] = useState<MediaItem | null>(null);
   const [runs, setRuns] = useState<RunItem[]>([]);
@@ -37,6 +50,21 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
     { id: string; kind: string; path: string; lang?: string }[]
   >([]);
   const [preview, setPreview] = useState("");
+  const [meta, setMeta] = useState<MetadataForm>({
+    title_original: "",
+    title_zh: "",
+    title_en: "",
+    season: "",
+    episode: "",
+    type: "",
+    year: "",
+    language_hints: "",
+    glossary: "",
+    notes: "",
+  });
+  const [metaAdvanced, setMetaAdvanced] = useState(false);
+  const [metaJson, setMetaJson] = useState("{}");
+  const [metaMessage, setMetaMessage] = useState("");
 
   const fetchDetail = async () => {
     const res = await fetch(`/api/v3/media/${params.id}`);
@@ -54,6 +82,25 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
       setSubtitleList(data.outputs || []);
     }
   };
+  const fetchMetadata = async () => {
+    const res = await fetch(`/api/v3/media/${params.id}/metadata`);
+    const data = await res.json();
+    if (!data.ok) return;
+    const value = data.data || {};
+    setMeta({
+      title_original: value.title_original || "",
+      title_zh: value.title_localized?.["zh-CN"] || value.title_localized?.zh || "",
+      title_en: value.title_localized?.["en"] || value.title_localized?.["en-US"] || "",
+      season: value.season != null ? String(value.season) : "",
+      episode: value.episode != null ? String(value.episode) : "",
+      type: value.type || "",
+      year: value.year != null ? String(value.year) : "",
+      language_hints: value.language_hints || "",
+      glossary: value.glossary ? JSON.stringify(value.glossary, null, 2) : "",
+      notes: value.notes || "",
+    });
+    setMetaJson(JSON.stringify(value, null, 2));
+  };
   const fetchPreview = async (sid: string) => {
     const res = await fetch(`/api/v3/media/${params.id}/subtitles/${sid}`);
     const data = await res.json();
@@ -70,6 +117,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
   useEffect(() => {
     fetchDetail();
     fetchSubtitles();
+    fetchMetadata();
   }, [params.id]);
 
   if (!media) {
@@ -182,12 +230,24 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               {runs.length ? (
                 runs.map((run) => (
                   <div key={run.id} className="flex items-center justify-between gap-3">
-                    <span>
-                      {run.type} · {run.status}
-                    </span>
-                    <Link className={buttonVariants({ size: "sm", variant: "ghost" })} href={`/runs/${run.id}`}>
-                      查看
-                    </Link>
+                    <div>
+                      <div>
+                        {run.type} · {run.status}
+                      </div>
+                      <div className="text-xs text-dune">
+                        {new Date(run.started_at * 1000).toLocaleString()}
+                        {run.finished_at ? ` → ${new Date(run.finished_at * 1000).toLocaleString()}` : ""}
+                      </div>
+                      {run.error ? <div className="text-xs text-rose-600">Error: {run.error}</div> : null}
+                    </div>
+                    <div className="flex gap-2">
+                      <Link className={buttonVariants({ size: "sm", variant: "ghost" })} href={`/runs/${run.id}`}>
+                        日志
+                      </Link>
+                      <Button size="sm" variant="outline" onClick={() => fetch(`/api/v3/runs/${run.id}/retry`, { method: "POST" }).then(fetchDetail)}>
+                        Retry
+                      </Button>
+                    </div>
                   </div>
                 ))
               ) : (
@@ -201,12 +261,176 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
           <div className="glass-panel rounded-2xl p-4">
             <h2 className="text-sm font-semibold text-ink">Metadata</h2>
             <p className="mt-2 text-sm text-dune">通过表单补全作品信息。</p>
-            <Link
-              className={`${buttonVariants({ size: "sm", variant: "outline" })} mt-4 inline-flex`}
-              href={`/metadata?path=${encodeURIComponent(media.path)}`}
-            >
-              打开元数据编辑
-            </Link>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">原始标题</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.title_original}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, title_original: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">简体标题</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.title_zh}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, title_zh: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">英文标题</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.title_en}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, title_en: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">语言提示</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.language_hints}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, language_hints: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">类型</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.type}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, type: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">年份</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.year}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, year: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">季</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.season}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, season: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">集</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.episode}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, episode: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="mt-4 grid gap-2">
+              <label className="text-sm text-dune">术语表（JSON）</label>
+              <textarea
+                className="min-h-[120px] rounded-xl border border-border bg-white/90 p-3 text-sm"
+                value={meta.glossary}
+                onChange={(e) => setMeta((prev) => ({ ...prev, glossary: e.target.value }))}
+              />
+            </div>
+            <div className="mt-4 grid gap-2">
+              <label className="text-sm text-dune">备注</label>
+              <textarea
+                className="min-h-[80px] rounded-xl border border-border bg-white/90 p-3 text-sm"
+                value={meta.notes}
+                onChange={(e) => setMeta((prev) => ({ ...prev, notes: e.target.value }))}
+              />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Button
+                onClick={async () => {
+                  setMetaMessage("");
+                  let glossary = undefined;
+                  if (meta.glossary.trim()) {
+                    try {
+                      glossary = JSON.parse(meta.glossary);
+                    } catch {
+                      setMetaMessage("术语表 JSON 格式错误");
+                      return;
+                    }
+                  }
+                  const payload = {
+                    title_original: meta.title_original || undefined,
+                    title_localized: {
+                      ...(meta.title_zh ? { "zh-CN": meta.title_zh } : {}),
+                      ...(meta.title_en ? { en: meta.title_en } : {}),
+                    },
+                    season: meta.season ? Number(meta.season) : undefined,
+                    episode: meta.episode ? Number(meta.episode) : undefined,
+                    type: meta.type || undefined,
+                    year: meta.year ? Number(meta.year) : undefined,
+                    language_hints: meta.language_hints || undefined,
+                    glossary,
+                    notes: meta.notes || undefined,
+                  };
+                  const res = await fetch(`/api/v3/media/${params.id}/metadata`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ data: payload }),
+                  });
+                  const data = await res.json();
+                  if (!res.ok || !data.ok) {
+                    setMetaMessage(data.message || "保存失败");
+                    return;
+                  }
+                  setMetaMessage("已保存");
+                }}
+              >
+                保存元数据
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setMetaAdvanced((prev) => !prev);
+                }}
+              >
+                {metaAdvanced ? "收起高级 JSON" : "展开高级 JSON"}
+              </Button>
+            </div>
+            {metaMessage ? <p className="mt-2 text-sm text-ember">{metaMessage}</p> : null}
+            {metaAdvanced ? (
+              <div className="mt-4">
+                <textarea
+                  className="min-h-[200px] w-full rounded-xl border border-border bg-white/90 p-3 text-sm"
+                  value={metaJson}
+                  onChange={(e) => setMetaJson(e.target.value)}
+                />
+                <Button
+                  className="mt-3"
+                  variant="outline"
+                  onClick={async () => {
+                    setMetaMessage("");
+                    let parsed = {};
+                    try {
+                      parsed = JSON.parse(metaJson);
+                    } catch {
+                      setMetaMessage("JSON 格式错误");
+                      return;
+                    }
+                    const res = await fetch(`/api/v3/media/${params.id}/metadata`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ data: parsed }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.ok) {
+                      setMetaMessage(data.message || "保存失败");
+                      return;
+                    }
+                    setMetaMessage("已保存");
+                  }}
+                >
+                  保存高级 JSON
+                </Button>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
