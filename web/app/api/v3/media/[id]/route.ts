@@ -1,5 +1,6 @@
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
+import { detectSubtitleHints } from "@/lib/server/media";
 import { getMedia, listRuns, scanAndSync } from "@/lib/server/v3/store";
 
 export const runtime = "nodejs";
@@ -16,5 +17,6 @@ export async function GET(request: Request, context: { params: { id: string } })
     return Response.json({ ok: false, message: "未找到媒体" }, { status: 404 });
   }
   const runs = listRuns(state, media.id).sort((a, b) => b.started_at - a.started_at);
-  return Response.json({ ok: true, media, runs });
+  const subtitle_hints = await detectSubtitleHints(env, media.path);
+  return Response.json({ ok: true, media, runs, subtitle_hints });
 }

@@ -1,7 +1,11 @@
 import fs from "fs/promises";
 import path from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
 
 const VIDEO_EXTS = new Set([".mp4", ".mkv", ".webm", ".mov", ".avi"]);
+const SUBTITLE_EXTS = new Set([".srt", ".ass", ".ssa", ".vtt", ".sub", ".sup"]);
+const execFileAsync = promisify(execFile);
 
 export function parseDirs(raw: string) {
   return raw
@@ -70,6 +74,68 @@ export async function findSubtitleCandidates(env: Record<string, string>, videoP
       .sort();
   } catch {
     return [];
+  }
+}
+
+export async function detectSubtitleHints(env: Record<string, string>, videoPath: string) {
+  const external = await findExternalSubtitles(env, videoPath);
+  const embeddedCount = await findEmbeddedSubtitles(videoPath);
+  return {
+    external_count: external.length,
+    embedded_count: embeddedCount,
+    has_subtitle: external.length > 0 || embeddedCount > 0,
+  };
+}
+
+async function findExternalSubtitles(env: Record<string, string>, videoPath: string) {
+  const base = path.basename(videoPath, path.extname(videoPath)).toLowerCase();
+  const dirs = new Set<string>();
+  dirs.add(path.dirname(videoPath));
+  const outDir = getOutputDir(env, videoPath);
+  if (outDir) {
+    dirs.add(outDir);
+  }
+  const matches = new Set<string>();
+  for (const dir of dirs) {
+    try {
+      const entries = await fs.readdir(dir);
+      for (const name of entries) {
+        const ext = path.extname(name).toLowerCase();
+        if (!SUBTITLE_EXTS.has(ext)) continue;
+        const stem = path.basename(name, ext).toLowerCase();
+        if (stem === base || stem.startsWith(`${base}.`)) {
+          matches.add(path.join(dir, name));
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+  return Array.from(matches);
+}
+
+async function findEmbeddedSubtitles(videoPath: string) {
+  try {
+    const { stdout } = await execFileAsync(
+      "ffprobe",
+      [
+        "-v",
+        "error",
+        "-select_streams",
+        "s",
+        "-show_entries",
+        "stream=index",
+        "-of",
+        "json",
+        videoPath,
+      ],
+      { timeout: 5000 }
+    );
+    const data = JSON.parse(stdout || "{}") as { streams?: unknown[] };
+    const streams = Array.isArray(data.streams) ? data.streams : [];
+    return streams.length;
+  } catch {
+    return 0;
   }
 }
 

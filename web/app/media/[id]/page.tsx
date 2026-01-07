@@ -22,6 +22,12 @@ type MediaItem = {
   };
 };
 
+type SubtitleHints = {
+  external_count: number;
+  embedded_count: number;
+  has_subtitle: boolean;
+};
+
 type RunItem = {
   id: string;
   type: string;
@@ -62,6 +68,12 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
   const [preview, setPreview] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [subtitleHints, setSubtitleHints] = useState<SubtitleHints | null>(null);
+  const [showForceDialog, setShowForceDialog] = useState(false);
+  const [forceIgnoreSimplified, setForceIgnoreSimplified] = useState(true);
+  const [forceTranslate, setForceTranslate] = useState(false);
+  const [forceAsr, setForceAsr] = useState(false);
+  const [forceUseExisting, setForceUseExisting] = useState(true);
   const [meta, setMeta] = useState<MetadataForm>({
     title_original: "",
     title_zh: "",
@@ -94,6 +106,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
     if (data.ok) {
       setMedia(data.media);
       setRuns(data.runs || []);
+      setSubtitleHints(data.subtitle_hints || null);
     }
   };
 
@@ -157,7 +170,34 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
       pushToast(data.message || t("common.actionFailed"), "error");
       return;
     }
+    if (data.warning) {
+      pushToast(data.warning, "info");
+    }
     pushToast(t("toast.actionTriggered"), "success");
+    fetchDetail();
+  };
+
+  const triggerForceRun = async () => {
+    const res = await fetch(`/api/v3/media/${params.id}/force`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ignore_simplified_subtitle: forceIgnoreSimplified,
+        force_translate: forceTranslate,
+        force_asr: forceAsr,
+        use_existing_subtitle: forceAsr ? false : forceUseExisting,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      pushToast(data.message || t("common.actionFailed"), "error");
+      return;
+    }
+    if (data.warning) {
+      pushToast(data.warning, "info");
+    }
+    pushToast(t("toast.actionTriggered"), "success");
+    setShowForceDialog(false);
     fetchDetail();
   };
 
@@ -165,6 +205,14 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
     fetchDetail();
     fetchSubtitles();
     fetchMetadata();
+  }, [params.id]);
+
+  useEffect(() => {
+    const handle = window.setInterval(() => {
+      fetchDetail();
+      fetchSubtitles();
+    }, 10000);
+    return () => window.clearInterval(handle);
   }, [params.id]);
 
   if (!media) {
@@ -204,6 +252,64 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
     <main className="min-h-screen px-6 py-10">
       <AuthGuard />
       <section className="mx-auto max-w-5xl space-y-6">
+        {showForceDialog ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6">
+            <div className="w-full max-w-md rounded-2xl bg-white p-5 text-sm shadow-xl">
+              <div className="text-base font-semibold text-neutral-900">{t("media.force.title")}</div>
+              <p className="mt-2 text-sm text-neutral-500">{t("media.force.desc")}</p>
+              {subtitleList.length ? (
+                <p className="mt-2 text-xs text-neutral-500">{t("media.force.subtitleHint")}</p>
+              ) : null}
+              <div className="mt-4 space-y-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={forceIgnoreSimplified}
+                    onChange={(e) => setForceIgnoreSimplified(e.target.checked)}
+                  />
+                  {t("media.force.ignoreSimplified")}
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={forceTranslate}
+                    onChange={(e) => setForceTranslate(e.target.checked)}
+                  />
+                  {t("media.force.forceTranslate")}
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={forceUseExisting}
+                    disabled={forceAsr}
+                    onChange={(e) => setForceUseExisting(e.target.checked)}
+                  />
+                  {t("media.force.useExisting")}
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={forceAsr}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setForceAsr(next);
+                      if (next) {
+                        setForceUseExisting(false);
+                      }
+                    }}
+                  />
+                  {t("media.force.forceAsr")}
+                </label>
+              </div>
+              <div className="mt-5 flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setShowForceDialog(false)}>
+                  {t("common.close")}
+                </Button>
+                <Button onClick={triggerForceRun}>{t("common.confirm")}</Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="section-title">{media.title}</h1>
@@ -215,6 +321,22 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
             {media.status === "failed" ? (
               <Button onClick={() => triggerAction("retry")}>{t("common.retry")}</Button>
             ) : null}
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (subtitleHints?.has_subtitle) {
+                  setForceIgnoreSimplified(true);
+                  setForceTranslate(false);
+                  setForceAsr(false);
+                  setForceUseExisting(true);
+                  setShowForceDialog(true);
+                } else {
+                  triggerForceRun();
+                }
+              }}
+            >
+              {t("common.forceRun")}
+            </Button>
             {!media.outputs.zh ? (
               <Button variant="outline" onClick={() => triggerAction("translate")}>
                 {t("common.translate")}
@@ -310,30 +432,42 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
             <div className="mt-3 space-y-2 text-sm text-neutral-600">
               {runs.length ? (
                 runs.map((run) => (
-                  <div key={run.id} className="flex items-center justify-between gap-3">
-                    <div>
+                  <div key={run.id} className="rounded-2xl border border-neutral-200 bg-white/70 px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        {run.type} · {run.status}
+                        <div className="font-medium text-neutral-900">
+                          {run.type} · {t(`status.${run.status}`) || run.status}
+                        </div>
+                        <div className="text-xs text-neutral-500">
+                          {new Date(run.started_at * 1000).toLocaleString()}
+                          {run.finished_at ? ` → ${new Date(run.finished_at * 1000).toLocaleString()}` : ""}
+                        </div>
+                        {run.error ? <div className="text-xs text-rose-600">Error: {run.error}</div> : null}
                       </div>
-                      <div className="text-xs text-neutral-500">
-                        {new Date(run.started_at * 1000).toLocaleString()}
-                        {run.finished_at ? ` → ${new Date(run.finished_at * 1000).toLocaleString()}` : ""}
+                      <div className="flex gap-2">
+                        <Link className={buttonVariants({ size: "sm", variant: "outline" })} href={`/runs/${run.id}`}>
+                          {t("run.log")}
+                        </Link>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={async () => {
+                            const res = await fetch(`/api/v3/runs/${run.id}/retry`, { method: "POST" });
+                            const data = await res.json();
+                            if (!res.ok || !data.ok) {
+                              pushToast(data.message || t("common.actionFailed"), "error");
+                              return;
+                            }
+                            if (data.warning) {
+                              pushToast(data.warning, "info");
+                            }
+                            pushToast(t("toast.actionTriggered"), "success");
+                            fetchDetail();
+                          }}
+                        >
+                          {t("common.retry")}
+                        </Button>
                       </div>
-                      {run.error ? <div className="text-xs text-rose-600">Error: {run.error}</div> : null}
-                    </div>
-                    <div className="flex gap-2">
-                      <Link className={buttonVariants({ size: "sm", variant: "ghost" })} href={`/runs/${run.id}`}>
-                        {t("run.log")}
-                      </Link>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          fetch(`/api/v3/runs/${run.id}/retry`, { method: "POST" }).then(fetchDetail)
-                        }
-                      >
-                        {t("common.retry")}
-                      </Button>
                     </div>
                   </div>
                 ))
@@ -352,7 +486,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.titleOriginal")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.title_original}
                   onChange={(e) => setMeta((prev) => ({ ...prev, title_original: e.target.value }))}
                 />
@@ -360,7 +494,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.titleZh")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.title_zh}
                   onChange={(e) => setMeta((prev) => ({ ...prev, title_zh: e.target.value }))}
                 />
@@ -368,7 +502,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.titleEn")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.title_en}
                   onChange={(e) => setMeta((prev) => ({ ...prev, title_en: e.target.value }))}
                 />
@@ -376,7 +510,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.languageHints")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.language_hints}
                   onChange={(e) => setMeta((prev) => ({ ...prev, language_hints: e.target.value }))}
                 />
@@ -384,7 +518,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.type")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.type}
                   onChange={(e) => setMeta((prev) => ({ ...prev, type: e.target.value }))}
                 />
@@ -392,7 +526,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.year")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.year}
                   onChange={(e) => setMeta((prev) => ({ ...prev, year: e.target.value }))}
                 />
@@ -400,7 +534,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.season")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.season}
                   onChange={(e) => setMeta((prev) => ({ ...prev, season: e.target.value }))}
                 />
@@ -408,7 +542,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.episode")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.episode}
                   onChange={(e) => setMeta((prev) => ({ ...prev, episode: e.target.value }))}
                 />
@@ -416,7 +550,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.episodeTitleJa")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.episode_title_ja}
                   onChange={(e) => setMeta((prev) => ({ ...prev, episode_title_ja: e.target.value }))}
                 />
@@ -424,7 +558,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.episodeTitleZh")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.episode_title_zh}
                   onChange={(e) => setMeta((prev) => ({ ...prev, episode_title_zh: e.target.value }))}
                 />
@@ -432,7 +566,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.episodeTitleEn")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.episode_title_en}
                   onChange={(e) => setMeta((prev) => ({ ...prev, episode_title_en: e.target.value }))}
                 />
@@ -440,7 +574,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.tmdbId")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.external_tmdb}
                   onChange={(e) => setMeta((prev) => ({ ...prev, external_tmdb: e.target.value }))}
                 />
@@ -448,7 +582,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.bangumiId")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.external_bangumi}
                   onChange={(e) => setMeta((prev) => ({ ...prev, external_bangumi: e.target.value }))}
                 />
@@ -456,7 +590,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.wmdbId")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.external_wmdb}
                   onChange={(e) => setMeta((prev) => ({ ...prev, external_wmdb: e.target.value }))}
                 />
@@ -464,7 +598,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               <div className="grid gap-2">
                 <label className="text-sm text-neutral-500">{t("media.meta.imdbId")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+                  className="h-10 rounded-full border border-border bg-white px-4 text-sm"
                   value={meta.external_imdb}
                   onChange={(e) => setMeta((prev) => ({ ...prev, external_imdb: e.target.value }))}
                 />

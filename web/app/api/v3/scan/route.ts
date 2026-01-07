@@ -3,6 +3,7 @@ import path from "path";
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
 import { logEvent } from "@/lib/server/logger";
+import { appendActivity, loadState, saveState } from "@/lib/server/v3/store";
 
 export const runtime = "nodejs";
 
@@ -32,6 +33,16 @@ export async function POST(request: Request) {
   if (errors.length) {
     return Response.json({ ok: false, message: errors.join("; ") }, { status: 500 });
   }
+  const state = await loadState();
+  const now = Math.floor(Date.now() / 1000);
+  appendActivity(state, {
+    id: `scan-${now}`,
+    type: "scan",
+    status: "info",
+    message: "触发扫描",
+    created_at: now,
+  });
+  await saveState(state);
   await logEvent(env, "INFO", "触发扫描");
   return Response.json({ ok: true });
 }

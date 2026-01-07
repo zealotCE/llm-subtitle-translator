@@ -1069,9 +1069,13 @@ def choose_realtime_chunk_seconds(duration_seconds):
     return max(1, chunk)
 
 
-def load_job_overrides(video_path):
+def job_override_path(video_path):
     name = base_name(video_path)
-    meta_path = os.path.join(os.path.dirname(video_path), f"{name}.job.json")
+    return os.path.join(os.path.dirname(video_path), f"{name}.job.json")
+
+
+def load_job_overrides(video_path):
+    meta_path = job_override_path(video_path)
     if not os.path.exists(meta_path):
         return {}
     try:
@@ -1082,6 +1086,14 @@ def load_job_overrides(video_path):
     if not isinstance(data, dict):
         return {}
     return data
+
+
+def override_bool(value, default):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 def run_realtime_chunks(
@@ -3394,6 +3406,7 @@ class TranslateCache:
     def __init__(self, db_path):
         self.db_path = db_path
         self.lock = threading.Lock()
+        self.failed = False
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         with self.conn:
@@ -3403,17 +3416,44 @@ class TranslateCache:
 
     def get(self, key):
         with self.lock:
-            cur = self.conn.execute("SELECT text FROM translations WHERE key = ?", (key,))
-            row = cur.fetchone()
-        return row[0] if row else None
+            if self.failed:
+                return None
+            try:
+                cur = self.conn.execute(
+                    "SELECT text FROM translations WHERE key = ?", (key,)
+                )
+                row = cur.fetchone()
+                return row[0] if row else None
+            except sqlite3.Error as exc:
+                if not self.failed:
+                    log(
+                        "WARN",
+                        "翻译缓存读取失败，后续将跳过缓存",
+                        db=self.db_path,
+                        error=str(exc),
+                    )
+                self.failed = True
+                return None
 
     def set(self, key, text):
         with self.lock:
-            self.conn.execute(
-                "INSERT OR REPLACE INTO translations (key, text) VALUES (?, ?)",
-                (key, text),
-            )
-            self.conn.commit()
+            if self.failed:
+                return
+            try:
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO translations (key, text) VALUES (?, ?)",
+                    (key, text),
+                )
+                self.conn.commit()
+            except sqlite3.Error as exc:
+                if not self.failed:
+                    log(
+                        "WARN",
+                        "翻译缓存写入失败，后续将跳过缓存",
+                        db=self.db_path,
+                        error=str(exc),
+                    )
+                self.failed = True
 
 
 def cache_key(src_lang, dst_lang, text):
@@ -3889,8 +3929,20 @@ def process_video(video_path):
     simplified_plain_path = os.path.join(out_dir, f"{name}.{SIMPLIFIED_LANG}.srt")
     simplified_llm_path = os.path.join(out_dir, f"{name}.llm.{SIMPLIFIED_LANG}.srt")
     overrides = load_job_overrides(video_path)
+    override_path = job_override_path(video_path)
     asr_mode = (overrides.get("asr_mode") or ASR_MODE).strip().lower()
     segment_mode = (overrides.get("segment_mode") or SEGMENT_MODE).strip().lower()
+    ignore_simplified_subtitle = override_bool(
+        overrides.get("ignore_simplified_subtitle"), IGNORE_SIMPLIFIED_SUBTITLE
+    )
+    use_existing_subtitle = override_bool(
+        overrides.get("use_existing_subtitle"), USE_EXISTING_SUBTITLE
+    )
+    force_once = override_bool(overrides.get("force_once"), False)
+    force_asr = override_bool(overrides.get("force_asr"), False)
+    force_translate = override_bool(overrides.get("force_translate"), False)
+    if force_asr:
+        use_existing_subtitle = False
     eval_enabled = should_collect_eval(video_path)
     eval_reference_text = ""
     eval_skip_main_srt = False
@@ -4038,12 +4090,12 @@ def process_video(video_path):
                 simplified_count=len(simplified_subs),
                 traditional_count=len(traditional_subs),
                 other_count=len(other_subs),
-                use_existing_subtitle=USE_EXISTING_SUBTITLE,
+                use_existing_subtitle=use_existing_subtitle,
                 simplified_lang=SIMPLIFIED_LANG,
-                ignore_simplified_subtitle=IGNORE_SIMPLIFIED_SUBTITLE,
+                ignore_simplified_subtitle=ignore_simplified_subtitle,
                 subtitle_mode=subtitle_cfg.mode,
             )
-        if not IGNORE_SIMPLIFIED_SUBTITLE and (
+        if not ignore_simplified_subtitle and (
             simplified_subs or os.path.exists(simplified_plain_path) or os.path.exists(simplified_llm_path)
         ):
             if not eval_enabled:
@@ -4090,7 +4142,7 @@ def process_video(video_path):
         vocab_id = None
         if traditional_subs:
             other_subs = traditional_subs + other_subs
-        if other_subs and USE_EXISTING_SUBTITLE:
+        if other_subs and use_existing_subtitle:
             log("INFO", "发现外部/内封字幕，尝试直接使用字幕生成简体", path=video_path)
             try:
                 subs, srt_text, tmp_srt = load_subtitles_from_source(video_path, other_subs[0])
@@ -4104,9 +4156,9 @@ def process_video(video_path):
 
         stage = "asr_prepare"
         if subs is None:
-            if other_subs and not USE_EXISTING_SUBTITLE:
+            if other_subs and not use_existing_subtitle:
                 log("INFO", "忽略现有字幕，继续语音识别", path=video_path)
-            if not other_subs and os.path.exists(srt_path):
+            if not force_asr and not other_subs and os.path.exists(srt_path):
                 try:
                     existing_text = read_text_file(srt_path)
                     subs = list(srt.parse(existing_text))
@@ -4116,6 +4168,8 @@ def process_video(video_path):
                     log("ERROR", "读取已生成字幕失败，回退到语音识别", path=video_path, error=str(exc))
                     subs = None
                     srt_text = None
+            elif force_asr and os.path.exists(srt_path):
+                log("INFO", "强制 ASR，忽略已生成字幕", path=video_path, input=srt_path)
             if subs is None:
                 path_info = guess_work_info_from_path(video_path)
                 alias_map = load_title_aliases(TITLE_ALIASES_PATH)
@@ -4234,7 +4288,8 @@ def process_video(video_path):
                 log("INFO", "识别完成并保存字幕", path=video_path, output=srt_path)
 
         stage = "translate"
-        if TRANSLATE:
+        translate_enabled = TRANSLATE or force_translate
+        if translate_enabled:
             try:
                 try:
                     cache = TranslateCache(CACHE_DB)
@@ -4342,16 +4397,19 @@ def process_video(video_path):
                 if not work_glossary:
                     work_glossary = load_work_glossary(metadata)
                 allow_translate = True
-                duration = get_media_duration(video_path)
-                if duration is not None and duration < MIN_TRANSLATE_DURATION:
-                    allow_translate = False
-                    log(
-                        "SKIP",
-                        "视频时长过短，跳过翻译",
-                        path=video_path,
-                        duration=round(duration, 2),
-                        min_duration=MIN_TRANSLATE_DURATION,
-                    )
+                if not force_translate:
+                    duration = get_media_duration(video_path)
+                    if duration is not None and duration < MIN_TRANSLATE_DURATION:
+                        allow_translate = False
+                        log(
+                            "SKIP",
+                            "视频时长过短，跳过翻译",
+                            path=video_path,
+                            duration=round(duration, 2),
+                            min_duration=MIN_TRANSLATE_DURATION,
+                        )
+                else:
+                    log("INFO", "强制翻译", path=video_path)
                 dst_langs = parse_langs()
                 if SIMPLIFIED_LANG not in dst_langs:
                     dst_langs = [SIMPLIFIED_LANG] + dst_langs
@@ -4477,6 +4535,13 @@ def process_video(video_path):
                 log("ERROR", "删除 OSS 对象失败", path=video_path, error=str(exc))
         if vocab_id:
             delete_vocabulary_id(vocab_id)
+        if force_once:
+            try:
+                if os.path.exists(override_path):
+                    os.remove(override_path)
+                    log("INFO", "已清理强制运行配置", path=video_path)
+            except OSError as exc:
+                log("WARN", "清理强制运行配置失败", path=video_path, error=str(exc))
 
 
 def scan_once(q, pending, lock, reason="interval"):

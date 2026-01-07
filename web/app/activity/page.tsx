@@ -13,6 +13,8 @@ type ActivityItem = {
   id: string;
   media_id?: string;
   run_id?: string;
+  media_title?: string;
+  media_path?: string;
   type: string;
   status: string;
   message: string;
@@ -32,6 +34,9 @@ export default function ActivityPage() {
     if (item.type === "media_added") return t("activity.msg.media_added");
     if (item.type === "retry") return t("activity.msg.retry");
     if (item.type === "translate") return t("activity.msg.translate");
+    if (item.type === "stage_asr_done") return t("activity.msg.stage_asr");
+    if (item.type === "stage_translate_done") return t("activity.msg.stage_translate");
+    if (item.type === "force") return t("activity.msg.force");
     if (item.type === "status_change") {
       return `${t("activity.msg.status_change")}: ${t(`status.${item.status}`) || item.status}`;
     }
@@ -68,6 +73,13 @@ export default function ActivityPage() {
     fetchActivity();
   }, [type, status]);
 
+  useEffect(() => {
+    const handle = window.setInterval(() => {
+      fetchActivity();
+    }, 10000);
+    return () => window.clearInterval(handle);
+  }, [type, status, page, pageSize]);
+
   return (
     <main className="min-h-screen px-6 py-10">
       <AuthGuard />
@@ -80,6 +92,9 @@ export default function ActivityPage() {
             <option value="status_change">{t("activity.type.status_change")}</option>
             <option value="retry">{t("activity.type.retry")}</option>
             <option value="translate">{t("activity.type.translate")}</option>
+            <option value="force">{t("activity.type.force")}</option>
+            <option value="stage_asr_done">{t("activity.type.stage_asr")}</option>
+            <option value="stage_translate_done">{t("activity.type.stage_translate")}</option>
           </Select>
           <Select value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="">{t("activity.filterAll")}</option>
@@ -97,43 +112,45 @@ export default function ActivityPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={fetchActivity}>{t("common.search")}</Button>
-          <Link href="/logs" className={buttonVariants({ variant: "outline", size: "sm" })}>
-            {t("activity.systemLogs")}
-          </Link>
         </div>
         <div className="space-y-3">
           {items.length ? (
             items.map((item) => (
-              <div key={item.id} className="glass-panel rounded-2xl px-4 py-3 text-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-neutral-900">{formatMessage(item)}</div>
-                  <div className="text-xs text-neutral-500">
-                    {new Date(item.created_at * 1000).toLocaleString()}
+              <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white/70 px-4 py-3 text-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-neutral-900">{formatMessage(item)}</div>
+                    {item.media_title ? (
+                      <div className="text-xs text-neutral-500">{item.media_title}</div>
+                    ) : null}
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-500">
+                      <span>
+                        {t("activity.type")}: {t(`activity.type.${item.type}`) || item.type}
+                      </span>
+                      <span>
+                        {t("activity.status")}: {t(`status.${item.status}`) || item.status}
+                      </span>
+                      <span>{new Date(item.created_at * 1000).toLocaleString()}</span>
+                    </div>
                   </div>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-500">
-                  <span>
-                    {t("activity.type")}: {t(`activity.type.${item.type}`) || item.type}
-                  </span>
-                  <span>
-                    {t("activity.status")}: {t(`status.${item.status}`) || item.status}
-                  </span>
-                  {item.media_id ? (
-                    <Link
-                      href={`/media/${item.media_id}`}
-                      className={buttonVariants({ size: "sm", variant: "outline" })}
-                    >
-                      {t("activity.mediaLink")}
-                    </Link>
-                  ) : null}
-                  {item.run_id ? (
-                    <Link
-                      href={`/runs/${item.run_id}`}
-                      className={buttonVariants({ size: "sm", variant: "outline" })}
-                    >
-                      {t("activity.runLink")}
-                    </Link>
-                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    {item.media_id ? (
+                      <Link
+                        href={`/media/${item.media_id}`}
+                        className={buttonVariants({ size: "sm", variant: "outline" })}
+                      >
+                        {t("activity.mediaLink")}
+                      </Link>
+                    ) : null}
+                    {item.run_id ? (
+                      <Link
+                        href={`/runs/${item.run_id}`}
+                        className={buttonVariants({ size: "sm", variant: "outline" })}
+                      >
+                        {t("activity.runLink")}
+                      </Link>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             ))
@@ -151,6 +168,11 @@ export default function ActivityPage() {
           <span>
             {t("common.page")} {page} · {t("common.of")} {total}
           </span>
+        </div>
+        <div className="text-xs text-neutral-400">
+          <Link href="/logs" className="hover:text-neutral-700">
+            {t("activity.systemLogs")}
+          </Link>
         </div>
       </section>
     </main>

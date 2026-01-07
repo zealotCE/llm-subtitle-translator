@@ -138,7 +138,7 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
         <h1 className="section-title">{t("editor.title")}</h1>
         <div className="flex flex-wrap items-center gap-3">
           <input
-            className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+            className="h-10 rounded-full border border-border bg-white px-4 text-sm"
             placeholder={t("editor.search")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}

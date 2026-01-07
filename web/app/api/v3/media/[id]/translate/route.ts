@@ -1,9 +1,9 @@
-import fs from "fs/promises";
-import path from "path";
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
 import { appendActivity, appendRun, getMedia, loadState, saveState } from "@/lib/server/v3/store";
 import { logEvent } from "@/lib/server/logger";
+import { clearMediaMarkers } from "@/lib/server/markers";
+import { triggerScan } from "@/lib/server/scan";
 
 export const runtime = "nodejs";
 
@@ -32,25 +32,16 @@ export async function POST(request: Request, context: { params: { id: string } }
     message: "触发翻译",
     created_at: media.updated_at,
   });
+  await clearMediaMarkers(env, media.path);
   await logEvent(env, "INFO", "触发翻译", { media_id: media.id, run_id: run.id });
-  await triggerScan(env);
-  await saveState(state);
-  return Response.json({ ok: true, run, media });
-}
-
-async function triggerScan(env: Record<string, string>) {
-  const watchDirs = (env.WATCH_DIRS || "")
-    .split(",")
-    .map((item) => item.trim().replace(/^['"]|['"]$/g, ""))
-    .filter(Boolean);
-  const triggerName = env.TRIGGER_SCAN_FILE || ".scan_now";
-  if (!watchDirs.length || !triggerName) return;
-  for (const dir of watchDirs) {
-    try {
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(path.join(dir, triggerName), "scan", "utf-8");
-    } catch {
-      // ignore
-    }
+  const scanResult = await triggerScan(env);
+  if (!scanResult.ok) {
+    await logEvent(env, "WARN", "触发扫描失败", {
+      media_id: media.id,
+      run_id: run.id,
+      error: scanResult.warning,
+    });
   }
+  await saveState(state);
+  return Response.json({ ok: true, run, media, warning: scanResult.ok ? "" : scanResult.warning });
 }

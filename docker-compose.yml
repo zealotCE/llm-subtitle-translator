@@ -21,7 +21,6 @@ services:
     environment:
       - WEB_PROJECT_ROOT=/app
       - WEB_CONFIG_PATH=.env
-      - WEB_MEDIA_DIRS=/test_video,/watch
     volumes:
       - ./.env:/app/.env
       - ./.web:/app/.web

@@ -17,5 +17,19 @@ export async function GET(request: Request) {
   const pageSize = Number(url.searchParams.get("page_size") || "50");
   const state = await loadState();
   const data = listActivity(state, { type, status, page, pageSize });
-  return Response.json({ ok: true, ...data });
+  const items = data.items.map((item) => {
+    if (!item.media_id) {
+      return item;
+    }
+    const media = state.media[item.media_id];
+    if (!media) {
+      return item;
+    }
+    return {
+      ...item,
+      media_title: media.title,
+      media_path: media.path,
+    };
+  });
+  return Response.json({ ok: true, ...data, items });
 }

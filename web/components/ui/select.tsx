@@ -52,7 +52,7 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
           disabled={disabled}
           onClick={() => !disabled && setOpen((prev) => !prev)}
           className={cn(
-            "flex h-10 w-full items-center justify-between rounded-xl border border-border bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900/30 disabled:cursor-not-allowed disabled:opacity-60",
+            "flex h-10 w-full items-center justify-between rounded-full border border-border bg-white px-4 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900/30 disabled:cursor-not-allowed disabled:opacity-60",
             className
           )}
         >
@@ -60,7 +60,7 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
           <span className="ml-3 text-neutral-500">▾</span>
         </button>
         {open ? (
-          <div className="absolute left-0 top-full z-40 mt-2 w-full rounded-xl border border-neutral-200 bg-white p-1 text-sm shadow-lg">
+          <div className="absolute left-0 top-full z-40 mt-2 w-full rounded-2xl border border-neutral-200 bg-white p-1 text-sm shadow-lg">
             {options.map((opt) => (
               <button
                 key={opt.value}

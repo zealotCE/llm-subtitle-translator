@@ -28,16 +28,21 @@ export default function HomePage() {
   const { t } = useI18n();
 
   useEffect(() => {
-    fetch("/api/v3/summary")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.ok) {
-          setSummary(data);
-        }
-      })
-      .catch(() => {
-        setSummary(null);
-      });
+    const fetchSummary = () => {
+      fetch("/api/v3/summary")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.ok) {
+            setSummary(data);
+          }
+        })
+        .catch(() => {
+          setSummary(null);
+        });
+    };
+    fetchSummary();
+    const handle = window.setInterval(fetchSummary, 10000);
+    return () => window.clearInterval(handle);
   }, []);
 
   return (

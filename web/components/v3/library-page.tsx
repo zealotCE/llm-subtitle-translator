@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthGuard } from "@/components/auth-guard";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -26,6 +27,7 @@ type MediaItem = {
     raw?: { id: string; path: string };
     zh?: { id: string; path: string };
     bi?: { id: string; path: string };
+    other?: { id: string; path: string; lang?: string }[];
   };
   updated_at: number;
   archived: boolean;
@@ -57,6 +59,29 @@ function downloadFile(name: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
+function labelFromPath(pathValue: string) {
+  const lower = pathValue.toLowerCase();
+  if (lower.includes(".llm.zh") || lower.endsWith(".zh.srt") || lower.includes(".zh-hans")) return "简";
+  if (lower.includes(".zh-hant") || lower.includes(".zh-tw") || lower.includes(".cht") || lower.includes(".tc")) {
+    return "繁";
+  }
+  if (lower.includes(".ja.") || lower.includes(".jpn") || lower.includes(".jp")) return "日";
+  if (lower.includes(".en.") || lower.includes(".eng")) return "英";
+  return "其";
+}
+
+function subtitleBadges(item: MediaItem) {
+  const badges: string[] = [];
+  if (item.outputs?.raw) badges.push("raw");
+  if (item.outputs?.zh) badges.push(labelFromPath(item.outputs.zh.path));
+  if (item.outputs?.bi) badges.push("双");
+  if (item.outputs?.other?.length) {
+    const extras = item.outputs.other.map((output) => labelFromPath(output.path));
+    badges.push(...extras);
+  }
+  return badges;
+}
+
 export default function LibraryPage() {
   const router = useRouter();
   const { t } = useI18n();
@@ -69,6 +94,7 @@ export default function LibraryPage() {
   const [sort, setSort] = useState("updated_desc");
   const [pageSize, setPageSize] = useState(50);
   const { pushToast } = useToast();
+  const suspendOrderUntilRef = useRef(0);
 
   const filters = [
     { key: "missing_zh", label: t("library.filter.missingZh") },
@@ -92,7 +118,21 @@ export default function LibraryPage() {
       pushToast(msg, "error");
       return;
     }
-    setItems(data.items || []);
+    const incoming = (data.items || []) as MediaItem[];
+    setItems((prev) => {
+      if (Date.now() < suspendOrderUntilRef.current && prev.length) {
+        const map = new Map(incoming.map((item: MediaItem) => [item.id, item]));
+        const merged: MediaItem[] = prev.map((item) => map.get(item.id) || item);
+        const seen = new Set(merged.map((item) => item.id));
+        for (const item of incoming) {
+          if (!seen.has(item.id)) {
+            merged.push(item);
+          }
+        }
+        return merged;
+      }
+      return incoming;
+    });
     setTotal(data.total || 0);
   };
 
@@ -108,6 +148,13 @@ export default function LibraryPage() {
     return () => clearTimeout(handle);
   }, [query, selected]);
 
+  useEffect(() => {
+    const handle = window.setInterval(() => {
+      fetchMedia();
+    }, 10000);
+    return () => window.clearInterval(handle);
+  }, [query, selected, page, sort, pageSize]);
+
   const toggleFilter = (key: string) => {
     setSelected((prev) => (prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]));
     setPage(1);
@@ -122,8 +169,14 @@ export default function LibraryPage() {
       pushToast(msg, "error");
       return;
     }
+    if (data.warning) {
+      pushToast(data.warning, "info");
+    }
+    suspendOrderUntilRef.current = Date.now() + 15000;
+    if (data.media) {
+      setItems((prev) => prev.map((item) => (item.id === id ? data.media : item)));
+    }
     pushToast(t("toast.actionTriggered"), "success");
-    fetchMedia();
   };
 
   const filteredCount = items.length;
@@ -132,7 +185,13 @@ export default function LibraryPage() {
     [items]
   );
   const triggerScan = async () => {
-    await fetch("/api/v3/scan", { method: "POST" });
+    const res = await fetch("/api/v3/scan", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      const msg = data.message || t("common.actionFailed");
+      pushToast(msg, "error");
+      return;
+    }
     pushToast(t("toast.scanTriggered"), "success");
     fetchMedia();
   };
@@ -177,24 +236,16 @@ export default function LibraryPage() {
             onChange={(event) => setQuery(event.target.value)}
           />
           <Button onClick={fetchMedia}>{t("common.search")}</Button>
-          <select
-            className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
-            value={sort}
-            onChange={(event) => setSort(event.target.value)}
-          >
+          <Select value={sort} onChange={(event) => setSort(event.target.value)}>
             <option value="updated_desc">{t("library.sort.updated")}</option>
             <option value="created_desc">{t("library.sort.created")}</option>
             <option value="failed_first">{t("library.sort.failed")}</option>
-          </select>
-          <select
-            className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
-            value={String(pageSize)}
-            onChange={(event) => setPageSize(Number(event.target.value))}
-          >
+          </Select>
+          <Select value={String(pageSize)} onChange={(event) => setPageSize(Number(event.target.value))}>
             <option value="20">20/{t("library.pageSize")}</option>
             <option value="50">50/{t("library.pageSize")}</option>
             <option value="100">100/{t("library.pageSize")}</option>
-          </select>
+          </Select>
           <span className="text-sm text-neutral-500">
             {t("library.count")} {total} · {t("library.filtered")} {filteredCount} · {t("library.missing")}{" "}
             {missingZhCount}
@@ -265,10 +316,13 @@ export default function LibraryPage() {
                       {t(`status.${item.status}`) || item.status}
                     </span>
                   </TableCell>
-                  <TableCell className="space-x-2 text-xs">
-                    <span className={item.outputs?.raw ? "text-emerald-700" : "text-slate-400"}>raw</span>
-                    <span className={item.outputs?.zh ? "text-emerald-700" : "text-slate-400"}>zh</span>
-                    <span className={item.outputs?.bi ? "text-emerald-700" : "text-slate-400"}>bi</span>
+                  <TableCell className="text-xs">
+                    <span
+                      className="inline-block max-w-[160px] truncate text-neutral-700"
+                      title={subtitleBadges(item).join(" / ")}
+                    >
+                      {subtitleBadges(item).join(" / ") || "-"}
+                    </span>
                   </TableCell>
                   <TableCell className="flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
                     {item.status === "failed" ? (

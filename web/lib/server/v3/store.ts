@@ -43,13 +43,16 @@ export async function scanAndSync(env: Record<string, string>) {
   const mediaDirs = getMediaDirs(env);
   const items = await scanVideos(mediaDirs, (env.WATCH_RECURSIVE || "true") === "true");
   const now = Math.floor(Date.now() / 1000);
+  const seenIds = new Set<string>();
 
   for (const item of items) {
     const id = hashPath(item.path);
+    seenIds.add(id);
     const existing = state.media[id];
     const outputs = await collectOutputs(env, item.path);
     const failedLog = findTranslateFailedLog(env, item.path);
     const status = resolveStatus(env, item.path, outputs, existing?.archived || false);
+    const completionTs = computeCompletionTimestamp(env, item.path, outputs, failedLog);
     if (!existing) {
       state.media[id] = {
         id,
@@ -70,10 +73,34 @@ export async function scanAndSync(env: Record<string, string>) {
         created_at: now,
       });
     } else {
+      const finishedRun =
+        existing.status === "running" && (status === "done" || status === "failed");
+      const prevOutputs = existing.outputs || { other: [] };
+      const stageEvents: ActivityItem[] = [];
+      if ((!prevOutputs.raw && outputs.raw) || (finishedRun && outputs.raw)) {
+        stageEvents.push({
+          id: `${id}-stage-asr-${now}`,
+          media_id: id,
+          type: "stage_asr_done",
+          status: "done",
+          message: "ASR 阶段完成",
+          created_at: now,
+        });
+      }
+      if ((!prevOutputs.zh && outputs.zh) || (finishedRun && outputs.zh)) {
+        stageEvents.push({
+          id: `${id}-stage-translate-${now}`,
+          media_id: id,
+          type: "stage_translate_done",
+          status: "done",
+          message: "翻译阶段完成",
+          created_at: now,
+        });
+      }
       const changed = existing.status !== status || outputsChanged(existing.outputs, outputs);
       if (changed) {
         const updated = { ...existing, status, outputs, updated_at: now };
-        const result = syncRunForStatus(state, updated, status, now, failedLog);
+        const result = syncRunForStatus(state, updated, status, now, failedLog, completionTs);
         state.media[id] = { ...updated, last_run_id: result.lastRunId };
         if (existing.status !== status) {
           state.activity.unshift({
@@ -86,12 +113,22 @@ export async function scanAndSync(env: Record<string, string>) {
             created_at: now,
           });
         }
+        if (stageEvents.length) {
+          for (const evt of stageEvents) {
+            evt.run_id = result.lastRunId;
+            state.activity.unshift(evt);
+          }
+        }
       } else {
         state.media[id] = { ...existing, outputs };
+        if ((status === "done" || status === "failed") && completionTs && existing.last_run_id) {
+          adjustRunTiming(state, existing.last_run_id, completionTs);
+        }
       }
     }
   }
 
+  pruneStaleEntries(state, mediaDirs, seenIds);
   await saveState(state);
   return state;
 }
@@ -361,10 +398,14 @@ function findTranslateFailedLog(env: Record<string, string>, videoPath: string) 
 
 function outputsChanged(a: MediaOutputs, b: MediaOutputs) {
   const key = (output?: MediaOutput) => output?.path || "";
+  const stamp = (output?: MediaOutput) => output?.updated_at || 0;
   return (
     key(a.raw) !== key(b.raw) ||
+    stamp(a.raw) !== stamp(b.raw) ||
     key(a.zh) !== key(b.zh) ||
+    stamp(a.zh) !== stamp(b.zh) ||
     key(a.bi) !== key(b.bi) ||
+    stamp(a.bi) !== stamp(b.bi) ||
     a.other.length !== b.other.length
   );
 }
@@ -374,13 +415,15 @@ function syncRunForStatus(
   media: MediaItem,
   status: MediaStatus,
   now: number,
-  failedLog?: string
+  failedLog?: string,
+  completionTs?: number
 ) {
   let lastRunId = media.last_run_id;
   if (status === "running") {
     const run = appendRun(state, media.id, "pipeline", "running");
     lastRunId = run.id;
   } else if (status === "done" || status === "failed") {
+    const finishedAt = completionTs ? Math.min(now, completionTs) : now;
     if (lastRunId && state.runs[lastRunId]) {
       const run = state.runs[lastRunId];
       if (run.status === "running") {
@@ -389,11 +432,18 @@ function syncRunForStatus(
           status: status === "done" ? "done" : "failed",
           error: status === "failed" ? "translate_failed" : undefined,
           log_ref: status === "failed" ? failedLog || run.log_ref : run.log_ref,
-          finished_at: now,
+          finished_at: Math.max(run.started_at, finishedAt),
         };
+      } else if (completionTs && run.finished_at) {
+        const adjusted = Math.max(run.started_at, Math.min(run.finished_at, completionTs));
+        state.runs[lastRunId] = { ...run, finished_at: adjusted };
       }
     } else {
       const run = appendRun(state, media.id, "pipeline", status === "done" ? "done" : "failed");
+      if (completionTs) {
+        run.started_at = completionTs;
+        run.finished_at = completionTs;
+      }
       if (status === "failed") {
         run.error = "translate_failed";
         run.log_ref = failedLog || "";
@@ -432,4 +482,83 @@ function exists(p: string) {
   } catch {
     return false;
   }
+}
+
+function adjustRunTiming(state: StoreState, runId: string, completionTs: number) {
+  const run = state.runs[runId];
+  if (!run || !run.finished_at) return;
+  const adjusted = Math.max(run.started_at, Math.min(run.finished_at, completionTs));
+  if (adjusted !== run.finished_at) {
+    state.runs[runId] = { ...run, finished_at: adjusted };
+  }
+}
+
+function computeCompletionTimestamp(
+  env: Record<string, string>,
+  videoPath: string,
+  outputs: MediaOutputs,
+  failedLog?: string
+) {
+  const outDir = getOutputDir(env, videoPath);
+  if (!outDir) return undefined;
+  const base = path.basename(videoPath, path.extname(videoPath));
+  const suffix = env.OUTPUT_LANG_SUFFIX || "";
+  const marker = `${base}${suffix}`;
+  const candidates: number[] = [];
+  for (const output of [outputs.raw, outputs.zh, outputs.bi, ...outputs.other]) {
+    if (output?.updated_at) {
+      candidates.push(output.updated_at);
+    }
+  }
+  if (candidates.length) {
+    return Math.max(...candidates);
+  }
+  const donePath = path.join(outDir, `${marker}.done`);
+  if (exists(donePath)) {
+    try {
+      const stat = require("fs").statSync(donePath);
+      candidates.push(Math.floor(stat.mtimeMs / 1000));
+    } catch {
+      // ignore
+    }
+  }
+  if (failedLog) {
+    try {
+      const stat = require("fs").statSync(failedLog);
+      candidates.push(Math.floor(stat.mtimeMs / 1000));
+    } catch {
+      // ignore
+    }
+  }
+  if (!candidates.length) return undefined;
+  return Math.max(...candidates);
+}
+
+function pruneStaleEntries(state: StoreState, mediaDirs: string[], seenIds: Set<string>) {
+  if (!mediaDirs.length) return;
+  const roots = mediaDirs.map((dir) => path.resolve(dir));
+  const removeIds: string[] = [];
+  for (const [id, media] of Object.entries(state.media)) {
+    if (seenIds.has(id)) continue;
+    const mediaPath = path.resolve(media.path);
+    const inScope = roots.some((root) => mediaPath === root || mediaPath.startsWith(`${root}${path.sep}`));
+    if (!inScope) {
+      removeIds.push(id);
+      continue;
+    }
+    if (!exists(media.path)) {
+      removeIds.push(id);
+    }
+  }
+  if (!removeIds.length) return;
+  const removeSet = new Set(removeIds);
+  for (const id of removeIds) {
+    delete state.media[id];
+  }
+  for (const [id, run] of Object.entries(state.runs)) {
+    if (removeSet.has(run.media_id)) {
+      delete state.runs[id];
+    }
+  }
+  state.activity = state.activity.filter((item) => !item.media_id || !removeSet.has(item.media_id));
 }
