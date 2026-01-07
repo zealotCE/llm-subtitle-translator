@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const keyword = url.searchParams.get("q") || "";
   const rawLimit = Number(url.searchParams.get("limit") || 200);
   const limit = Number.isFinite(rawLimit) ? Math.min(rawLimit, 5000) : 200;
-  const logDir = env.LOG_DIR || "";
+  const logDir = env.LOG_DIR || "/output/logs";
   const logName = env.LOG_FILE_NAME || "worker.log";
   if (!logDir) {
     return Response.json({ logs: [] });

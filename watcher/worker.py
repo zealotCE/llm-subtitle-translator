@@ -204,6 +204,8 @@ CONTEXT_AWARE_ENABLED = os.getenv("CONTEXT_AWARE_ENABLED", "true").lower() == "t
 NFO_ENABLED = os.getenv("NFO_ENABLED", "false").lower() == "true"
 NFO_SAME_NAME_ONLY = os.getenv("NFO_SAME_NAME_ONLY", "true").lower() == "true"
 LOG_DIR = os.getenv("LOG_DIR", "").strip()
+if not LOG_DIR:
+    LOG_DIR = os.path.join(OUT_DIR, "logs")
 LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "worker.log").strip()
 LOG_LOCK = threading.Lock()
 

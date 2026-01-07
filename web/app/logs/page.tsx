@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useI18n } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ function downloadFile(name: string, content: string) {
 }
 
 export default function LogsPage() {
+  const { t } = useI18n();
   const [keyword, setKeyword] = useState("");
   const [limit, setLimit] = useState("200");
   const [logs, setLogs] = useState<string[]>([]);
@@ -43,20 +45,30 @@ export default function LogsPage() {
     <main className="min-h-screen px-6 py-10">
       <AuthGuard />
       <section className="mx-auto max-w-5xl space-y-6">
-        <h1 className="section-title">日志</h1>
+        <h1 className="section-title">{t("logs.title")}</h1>
         <div className="flex flex-wrap gap-3">
-          <Input placeholder="关键词" className="max-w-xs" value={keyword} onChange={(e) => setKeyword(e.target.value)} />
-          <Input placeholder="条数" className="max-w-[120px]" value={limit} onChange={(e) => setLimit(e.target.value)} />
-          <Button onClick={fetchLogs}>筛选</Button>
+          <Input
+            placeholder={t("logs.keyword")}
+            className="max-w-xs"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+          />
+          <Input
+            placeholder={t("logs.limit")}
+            className="max-w-[120px]"
+            value={limit}
+            onChange={(e) => setLimit(e.target.value)}
+          />
+          <Button onClick={fetchLogs}>{t("common.search")}</Button>
           <Button variant="ghost" onClick={() => downloadFile("logs.json", JSON.stringify(logs, null, 2))}>
-            导出 JSON
+            {t("logs.exportJson")}
           </Button>
           <Button variant="ghost" onClick={() => downloadFile("logs.csv", csv)}>
-            导出 CSV
+            {t("logs.exportCsv")}
           </Button>
         </div>
-        {message ? <p className="text-sm text-ember">{message}</p> : null}
-        <div className="glass-panel rounded-2xl p-4 text-sm text-dune">
+        {message ? <p className="text-sm text-rose-600">{message}</p> : null}
+        <div className="glass-panel rounded-2xl p-4 text-sm text-neutral-600">
           {logs.length ? (
             logs.map((line, idx) => (
               <p key={idx} className="border-b border-border py-2 last:border-none">
@@ -64,7 +76,7 @@ export default function LogsPage() {
               </p>
             ))
           ) : (
-            <p>暂无日志</p>
+            <p>{t("logs.empty")}</p>
           )}
         </div>
       </section>

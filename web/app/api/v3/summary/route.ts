@@ -3,6 +3,7 @@ import { loadEnv, resolvePath } from "@/lib/server/env";
 import { buildSummary, scanAndSync } from "@/lib/server/v3/store";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const env = await loadEnv(resolvePath(".env"));
