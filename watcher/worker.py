@@ -4479,7 +4479,8 @@ def process_video(video_path):
             delete_vocabulary_id(vocab_id)
 
 
-def scan_once(q, pending, lock):
+def scan_once(q, pending, lock, reason="interval"):
+    found = 0
     for root in WATCH_DIR_LIST:
         try:
             if WATCH_RECURSIVE:
@@ -4490,6 +4491,7 @@ def scan_once(q, pending, lock):
                         if not is_video_file(path):
                             continue
                         enqueue(path, q, pending, lock)
+                        found += 1
             else:
                 entries = os.listdir(root)
                 for name in entries:
@@ -4499,16 +4501,20 @@ def scan_once(q, pending, lock):
                     if not is_video_file(path):
                         continue
                     enqueue(path, q, pending, lock)
+                    found += 1
         except FileNotFoundError:
             continue
+    if reason != "interval" and found == 0:
+        log("WARN", "扫描未发现媒体", reason=reason, watch=WATCH_DIR_LIST)
+    return found
 
 
 def scan_loop(q, pending, lock):
     while True:
         if _check_trigger_files():
-            scan_once(q, pending, lock)
+            scan_once(q, pending, lock, reason="trigger")
             continue
-        scan_once(q, pending, lock)
+        scan_once(q, pending, lock, reason="interval")
         time.sleep(SCAN_INTERVAL)
 
 
@@ -4558,7 +4564,7 @@ def inotify_loop(q, pending, lock):
             except OSError:
                 pass
             log("INFO", "触发文件扫描", path=path)
-            scan_once(q, pending, lock)
+            scan_once(q, pending, lock, reason="trigger")
             continue
         if os.path.isfile(path) and is_video_file(path):
             enqueue(path, q, pending, lock)
@@ -4584,7 +4590,7 @@ def handle_scan_signal(signum, frame):
     if GLOBAL_QUEUE is None or GLOBAL_PENDING is None or GLOBAL_LOCK is None:
         log("WARN", "扫描信号未就绪，跳过", signal=signum)
         return
-    scan_once(GLOBAL_QUEUE, GLOBAL_PENDING, GLOBAL_LOCK)
+    scan_once(GLOBAL_QUEUE, GLOBAL_PENDING, GLOBAL_LOCK, reason="signal")
 
 
 if __name__ == "__main__":

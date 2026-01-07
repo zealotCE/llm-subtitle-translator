@@ -17,3 +17,21 @@ def test_check_trigger_files(tmp_path: Path):
     finally:
         worker.WATCH_DIR_LIST = original
         worker.TRIGGER_SCAN_FILE = original_name
+
+
+def test_scan_once_logs_when_empty(tmp_path: Path, monkeypatch):
+    logs = []
+
+    def fake_log(level, message, **kwargs):
+        logs.append((level, message, kwargs))
+
+    original_dirs = worker.WATCH_DIR_LIST
+    monkeypatch.setattr(worker, "WATCH_DIR_LIST", [str(tmp_path)])
+    monkeypatch.setattr(worker, "log", fake_log)
+
+    try:
+        worker.scan_once(queue=None, pending=set(), lock=None, reason="trigger")
+    finally:
+        worker.WATCH_DIR_LIST = original_dirs
+
+    assert any(msg == "扫描未发现媒体" for _lvl, msg, _kw in logs)
