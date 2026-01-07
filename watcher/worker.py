@@ -4544,7 +4544,9 @@ def process_video(video_path):
                 log("WARN", "清理强制运行配置失败", path=video_path, error=str(exc))
 
 
-def scan_once(q, pending, lock, reason="interval"):
+def scan_once(q=None, pending=None, lock=None, reason="interval", **kwargs):
+    if q is None and "queue" in kwargs:
+        q = kwargs["queue"]
     found = 0
     for root in WATCH_DIR_LIST:
         try:
