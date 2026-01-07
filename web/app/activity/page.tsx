@@ -24,12 +24,14 @@ export default function ActivityPage() {
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
 
   const fetchActivity = async () => {
     const params = new URLSearchParams();
     if (type) params.set("type", type);
     if (status) params.set("status", status);
     params.set("page", String(page));
+    params.set("page_size", String(pageSize));
     const res = await fetch(`/api/v3/activity?${params.toString()}`);
     const data = await res.json();
     if (data.ok) {
@@ -44,7 +46,7 @@ export default function ActivityPage() {
 
   useEffect(() => {
     fetchActivity();
-  }, [page]);
+  }, [page, pageSize]);
 
   useEffect(() => {
     if (page !== 1) {
@@ -74,6 +76,11 @@ export default function ActivityPage() {
             <option value="failed">failed</option>
             <option value="done">done</option>
             <option value="info">info</option>
+          </Select>
+          <Select value={String(pageSize)} onChange={(event) => setPageSize(Number(event.target.value))}>
+            <option value="20">20/页</option>
+            <option value="50">50/页</option>
+            <option value="100">100/页</option>
           </Select>
           <Button onClick={fetchActivity}>筛选</Button>
         </div>

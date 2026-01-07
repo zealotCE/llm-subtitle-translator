@@ -33,12 +33,20 @@ type MetadataForm = {
   title_original: string;
   title_zh: string;
   title_en: string;
+  episode_title_ja: string;
+  episode_title_zh: string;
+  episode_title_en: string;
   season: string;
   episode: string;
   type: string;
   year: string;
   language_hints: string;
   glossary: string;
+  characters: string;
+  external_tmdb: string;
+  external_bangumi: string;
+  external_wmdb: string;
+  external_imdb: string;
   notes: string;
 };
 
@@ -54,12 +62,20 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
     title_original: "",
     title_zh: "",
     title_en: "",
+    episode_title_ja: "",
+    episode_title_zh: "",
+    episode_title_en: "",
     season: "",
     episode: "",
     type: "",
     year: "",
     language_hints: "",
     glossary: "",
+    characters: "",
+    external_tmdb: "",
+    external_bangumi: "",
+    external_wmdb: "",
+    external_imdb: "",
     notes: "",
   });
   const [metaAdvanced, setMetaAdvanced] = useState(false);
@@ -91,12 +107,20 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
       title_original: value.title_original || "",
       title_zh: value.title_localized?.["zh-CN"] || value.title_localized?.zh || "",
       title_en: value.title_localized?.["en"] || value.title_localized?.["en-US"] || "",
+      episode_title_ja: value.episode_title?.["ja"] || value.episode_title?.["ja-JP"] || "",
+      episode_title_zh: value.episode_title?.["zh-CN"] || value.episode_title?.zh || "",
+      episode_title_en: value.episode_title?.["en"] || value.episode_title?.["en-US"] || "",
       season: value.season != null ? String(value.season) : "",
       episode: value.episode != null ? String(value.episode) : "",
       type: value.type || "",
       year: value.year != null ? String(value.year) : "",
       language_hints: value.language_hints || "",
       glossary: value.glossary ? JSON.stringify(value.glossary, null, 2) : "",
+      characters: value.characters ? JSON.stringify(value.characters, null, 2) : "",
+      external_tmdb: value.external_ids?.tmdb ? String(value.external_ids.tmdb) : "",
+      external_bangumi: value.external_ids?.bangumi ? String(value.external_ids.bangumi) : "",
+      external_wmdb: value.external_ids?.wmdb ? String(value.external_ids.wmdb) : "",
+      external_imdb: value.external_ids?.imdb ? String(value.external_ids.imdb) : "",
       notes: value.notes || "",
     });
     setMetaJson(JSON.stringify(value, null, 2));
@@ -244,7 +268,13 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                       <Link className={buttonVariants({ size: "sm", variant: "ghost" })} href={`/runs/${run.id}`}>
                         日志
                       </Link>
-                      <Button size="sm" variant="outline" onClick={() => fetch(`/api/v3/runs/${run.id}/retry`, { method: "POST" }).then(fetchDetail)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          fetch(`/api/v3/runs/${run.id}/retry`, { method: "POST" }).then(fetchDetail)
+                        }
+                      >
                         Retry
                       </Button>
                     </div>
@@ -326,6 +356,62 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                   onChange={(e) => setMeta((prev) => ({ ...prev, episode: e.target.value }))}
                 />
               </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">本集标题（日）</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.episode_title_ja}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, episode_title_ja: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">本集标题（简中）</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.episode_title_zh}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, episode_title_zh: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">本集标题（英文）</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.episode_title_en}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, episode_title_en: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">TMDb ID</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.external_tmdb}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, external_tmdb: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">Bangumi ID</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.external_bangumi}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, external_bangumi: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">WMDB ID</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.external_wmdb}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, external_wmdb: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <label className="text-sm text-dune">IMDb ID</label>
+                <input
+                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  value={meta.external_imdb}
+                  onChange={(e) => setMeta((prev) => ({ ...prev, external_imdb: e.target.value }))}
+                />
+              </div>
             </div>
             <div className="mt-4 grid gap-2">
               <label className="text-sm text-dune">术语表（JSON）</label>
@@ -333,6 +419,14 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                 className="min-h-[120px] rounded-xl border border-border bg-white/90 p-3 text-sm"
                 value={meta.glossary}
                 onChange={(e) => setMeta((prev) => ({ ...prev, glossary: e.target.value }))}
+              />
+            </div>
+            <div className="mt-4 grid gap-2">
+              <label className="text-sm text-dune">角色列表（JSON）</label>
+              <textarea
+                className="min-h-[120px] rounded-xl border border-border bg-white/90 p-3 text-sm"
+                value={meta.characters}
+                onChange={(e) => setMeta((prev) => ({ ...prev, characters: e.target.value }))}
               />
             </div>
             <div className="mt-4 grid gap-2">
@@ -356,11 +450,25 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                       return;
                     }
                   }
+                  let characters = undefined;
+                  if (meta.characters.trim()) {
+                    try {
+                      characters = JSON.parse(meta.characters);
+                    } catch {
+                      setMetaMessage("角色列表 JSON 格式错误");
+                      return;
+                    }
+                  }
                   const payload = {
                     title_original: meta.title_original || undefined,
                     title_localized: {
                       ...(meta.title_zh ? { "zh-CN": meta.title_zh } : {}),
                       ...(meta.title_en ? { en: meta.title_en } : {}),
+                    },
+                    episode_title: {
+                      ...(meta.episode_title_ja ? { ja: meta.episode_title_ja } : {}),
+                      ...(meta.episode_title_zh ? { "zh-CN": meta.episode_title_zh } : {}),
+                      ...(meta.episode_title_en ? { en: meta.episode_title_en } : {}),
                     },
                     season: meta.season ? Number(meta.season) : undefined,
                     episode: meta.episode ? Number(meta.episode) : undefined,
@@ -368,6 +476,13 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                     year: meta.year ? Number(meta.year) : undefined,
                     language_hints: meta.language_hints || undefined,
                     glossary,
+                    characters,
+                    external_ids: {
+                      ...(meta.external_tmdb ? { tmdb: meta.external_tmdb } : {}),
+                      ...(meta.external_bangumi ? { bangumi: meta.external_bangumi } : {}),
+                      ...(meta.external_wmdb ? { wmdb: meta.external_wmdb } : {}),
+                      ...(meta.external_imdb ? { imdb: meta.external_imdb } : {}),
+                    },
                     notes: meta.notes || undefined,
                   };
                   const res = await fetch(`/api/v3/media/${params.id}/metadata`, {

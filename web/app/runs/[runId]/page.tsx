@@ -67,7 +67,9 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
             <div>Status: {run.status}</div>
             <div>Started: {new Date(run.started_at * 1000).toLocaleString()}</div>
             {run.finished_at ? <div>Finished: {new Date(run.finished_at * 1000).toLocaleString()}</div> : null}
+            {run.finished_at ? <div>Duration: {run.finished_at - run.started_at}s</div> : null}
             {run.error ? <div className="text-rose-600">Error: {run.error}</div> : null}
+            {run.log_ref ? <div>Log: {run.log_ref}</div> : null}
           </div>
         ) : (
           <p className="text-sm text-dune">加载中…</p>

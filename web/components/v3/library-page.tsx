@@ -69,13 +69,14 @@ export default function LibraryPage() {
   const [message, setMessage] = useState("");
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState("updated_desc");
+  const [pageSize, setPageSize] = useState(50);
 
   const fetchMedia = async () => {
     const params = new URLSearchParams();
     if (query) params.set("query", query);
     if (selected.length) params.set("filter", selected.join(","));
     params.set("page", String(page));
-    params.set("page_size", "50");
+    params.set("page_size", String(pageSize));
     params.set("sort", sort);
     const res = await fetch(`/api/v3/media?${params.toString()}`);
     const data = await res.json();
@@ -89,7 +90,7 @@ export default function LibraryPage() {
 
   useEffect(() => {
     fetchMedia();
-  }, [page, sort]);
+  }, [page, sort, pageSize]);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -172,6 +173,15 @@ export default function LibraryPage() {
             <option value="updated_desc">最近更新</option>
             <option value="created_desc">最近创建</option>
             <option value="failed_first">失败优先</option>
+          </select>
+          <select
+            className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+            value={String(pageSize)}
+            onChange={(event) => setPageSize(Number(event.target.value))}
+          >
+            <option value="20">20/页</option>
+            <option value="50">50/页</option>
+            <option value="100">100/页</option>
           </select>
           <Button variant="outline" onClick={triggerScan}>
             Rescan
