@@ -42,6 +42,10 @@ TRIGGER_SCAN_FILE = os.getenv("TRIGGER_SCAN_FILE", ".scan_now").strip()
 WORKER_CONCURRENCY = int(os.getenv("WORKER_CONCURRENCY", "1"))
 FFMPEG_CONCURRENCY = int(os.getenv("FFMPEG_CONCURRENCY", "1"))
 MAX_ACTIVE_JOBS = int(os.getenv("MAX_ACTIVE_JOBS", str(WORKER_CONCURRENCY)))
+QUEUE_PRIORITY_ENABLED = os.getenv("QUEUE_PRIORITY_ENABLED", "true").lower() == "true"
+QUEUE_PRIORITY_FAILED = int(os.getenv("QUEUE_PRIORITY_FAILED", "0"))
+QUEUE_PRIORITY_MISSING_ZH = int(os.getenv("QUEUE_PRIORITY_MISSING_ZH", "1"))
+QUEUE_PRIORITY_DEFAULT = int(os.getenv("QUEUE_PRIORITY_DEFAULT", "5"))
 ASR_MODE = os.getenv("ASR_MODE", "offline").strip().lower()
 SEGMENT_MODE = os.getenv("SEGMENT_MODE", "post").strip().lower()
 ASR_SAMPLE_RATE = int(os.getenv("ASR_SAMPLE_RATE", "16000"))
@@ -122,6 +126,8 @@ SUBTITLE_EXCLUDE_TITLES = [
 ]
 SUBTITLE_INDEX = os.getenv("SUBTITLE_INDEX", "").strip()
 SUBTITLE_LANG = os.getenv("SUBTITLE_LANG", "").strip()
+SUBTITLE_REUSE_MIN_CONFIDENCE = float(os.getenv("SUBTITLE_REUSE_MIN_CONFIDENCE", "0.35"))
+SUBTITLE_REUSE_SAMPLE_CHARS = int(os.getenv("SUBTITLE_REUSE_SAMPLE_CHARS", "2000"))
 
 AUDIO_PREFER_LANGS = [
     item.strip() for item in os.getenv("AUDIO_PREFER_LANGS", "jpn,ja,eng,en").split(",") if item.strip()
@@ -2963,6 +2969,64 @@ def _sample_subtitle_text(path):
     return data
 
 
+def _normalize_lang_tag(lang):
+    if not lang:
+        return ""
+    value = lang.strip().lower().replace("_", "-")
+    base = value.split("-")[0]
+    mapping = {
+        "jpn": "ja",
+        "ja": "ja",
+        "japanese": "ja",
+        "chi": "zh",
+        "zho": "zh",
+        "zh": "zh",
+        "cn": "zh",
+        "eng": "en",
+        "en": "en",
+        "english": "en",
+    }
+    return mapping.get(base, base)
+
+
+def _estimate_lang_confidence(text, lang):
+    if not text or not lang:
+        return 0.0
+    counts = {"han": 0, "kana": 0, "latin": 0}
+    for ch in text:
+        code = ord(ch)
+        if 0x3040 <= code <= 0x30FF:
+            counts["kana"] += 1
+        elif 0x4E00 <= code <= 0x9FFF:
+            counts["han"] += 1
+        elif ("A" <= ch <= "Z") or ("a" <= ch <= "z"):
+            counts["latin"] += 1
+    total = counts["han"] + counts["kana"] + counts["latin"]
+    if total == 0:
+        return 0.0
+    if lang == "ja":
+        return (counts["kana"] + counts["han"] * 0.4) / total
+    if lang == "zh":
+        return counts["han"] / total
+    if lang == "en":
+        return counts["latin"] / total
+    return 0.0
+
+
+def _select_reuse_confidence(text, lang_hints):
+    candidates = []
+    for hint in lang_hints:
+        normalized = _normalize_lang_tag(hint)
+        if normalized:
+            candidates.append(normalized)
+    if not candidates:
+        candidates = ["ja", "zh", "en"]
+    confidences = [
+        _estimate_lang_confidence(text, lang) for lang in dict.fromkeys(candidates)
+    ]
+    return max(confidences) if confidences else 0.0
+
+
 def describe_subtitle_variant(subtitle_info, video_path=None):
     if subtitle_info.get("kind") == "external":
         name = subtitle_info.get("name", "")
@@ -4216,9 +4280,28 @@ def process_video(video_path):
             log("INFO", "发现外部/内封字幕，尝试直接使用字幕生成简体", path=video_path)
             try:
                 subs, srt_text, tmp_srt = load_subtitles_from_source(video_path, other_subs[0])
-                with open(srt_path, "w", encoding="utf-8") as f:
-                    f.write(srt_text)
-                log("INFO", "已保存现有字幕", path=video_path, output=srt_path)
+                if SUBTITLE_REUSE_MIN_CONFIDENCE > 0:
+                    sample_text = (srt_text or "")[:SUBTITLE_REUSE_SAMPLE_CHARS]
+                    lang_hints = [
+                        other_subs[0].get("language") if other_subs else "",
+                        audio_track.language if audio_track else "",
+                        SRC_LANG if SRC_LANG != "auto" else "",
+                    ]
+                    reuse_confidence = _select_reuse_confidence(sample_text, lang_hints)
+                    if reuse_confidence < SUBTITLE_REUSE_MIN_CONFIDENCE:
+                        log(
+                            "WARN",
+                            "字幕语言置信度不足，回退到语音识别",
+                            path=video_path,
+                            confidence=round(reuse_confidence, 3),
+                            threshold=SUBTITLE_REUSE_MIN_CONFIDENCE,
+                        )
+                        subs = None
+                        srt_text = None
+                if subs and srt_text:
+                    with open(srt_path, "w", encoding="utf-8") as f:
+                        f.write(srt_text)
+                    log("INFO", "已保存现有字幕", path=video_path, output=srt_path)
             except Exception as exc:  # noqa: BLE001
                 log("ERROR", "读取现有字幕失败，回退到语音识别", path=video_path, error=str(exc))
                 subs = None
@@ -4687,12 +4770,61 @@ def enqueue(path, q, pending, lock):
         if path in pending:
             return
         pending.add(path)
+        priority = _compute_queue_priority(path)
+        _queue_put(q, path, priority)
+
+
+def _queue_put(q, path, priority):
+    if q is None:
+        return
+    if isinstance(q, queue.PriorityQueue):
+        q.put((priority, time.time(), path))
+    else:
         q.put(path)
+
+
+def _queue_extract_path(item):
+    if isinstance(item, tuple) and len(item) >= 3:
+        return item[2]
+    return item
+
+
+def _compute_queue_priority(path):
+    if not QUEUE_PRIORITY_ENABLED:
+        return QUEUE_PRIORITY_DEFAULT
+    out_dir = output_dir_for(path)
+    base = base_name(path)
+    if out_dir and _has_translate_failed(out_dir, base):
+        return QUEUE_PRIORITY_FAILED
+    if out_dir and not _has_simplified_subtitle(out_dir, base):
+        return QUEUE_PRIORITY_MISSING_ZH
+    return QUEUE_PRIORITY_DEFAULT
+
+
+def _has_translate_failed(out_dir, base):
+    try:
+        for name in os.listdir(out_dir):
+            if name.startswith(f"{base}.translate_failed"):
+                return True
+    except OSError:
+        return False
+    return False
+
+
+def _has_simplified_subtitle(out_dir, base):
+    if not SIMPLIFIED_LANG:
+        return True
+    candidates = [
+        os.path.join(out_dir, f"{base}.{SIMPLIFIED_LANG}.srt"),
+        os.path.join(out_dir, f"{base}.llm.{SIMPLIFIED_LANG}.srt"),
+    ]
+    return any(os.path.exists(path) for path in candidates)
 
 
 def worker_loop(q, pending, lock):
     while True:
-        path = q.get()
+        item = q.get()
+        path = _queue_extract_path(item)
         try:
             with _semaphore_guard(JOB_SEMAPHORE):
                 if os.path.isfile(path) and is_video_file(path):
@@ -4769,7 +4901,7 @@ if __name__ == "__main__":
         if not (OSS_ENDPOINT and OSS_BUCKET and OSS_ACCESS_KEY_ID and OSS_ACCESS_KEY_SECRET):
             log("ERROR", "缺少 OSS 配置")
 
-    q = queue.Queue()
+    q = queue.PriorityQueue() if QUEUE_PRIORITY_ENABLED else queue.Queue()
     pending = set()
     lock = threading.Lock()
     GLOBAL_QUEUE = q
@@ -4794,5 +4926,9 @@ if __name__ == "__main__":
         ffmpeg_concurrency=FFMPEG_CONCURRENCY,
         asr_mode=ASR_MODE,
         segment_mode=SEGMENT_MODE,
+        queue_priority_enabled=QUEUE_PRIORITY_ENABLED,
+        queue_priority_failed=QUEUE_PRIORITY_FAILED,
+        queue_priority_missing_zh=QUEUE_PRIORITY_MISSING_ZH,
+        queue_priority_default=QUEUE_PRIORITY_DEFAULT,
     )
     inotify_loop(q, pending, lock)

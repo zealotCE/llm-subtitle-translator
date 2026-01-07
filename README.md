@@ -157,6 +157,10 @@ Legacy 的 `watcher/web.py` 仍可继续使用。
 - `WORKER_CONCURRENCY`：处理线程数（默认 `1`）
 - `MAX_ACTIVE_JOBS`：同时处理的任务上限（默认 `WORKER_CONCURRENCY`）
 - `FFMPEG_CONCURRENCY`：FFmpeg 并发上限（默认 `1`）
+- `QUEUE_PRIORITY_ENABLED`：启用任务优先级队列（默认 `true`）
+- `QUEUE_PRIORITY_FAILED`：失败任务优先级（默认 `0`，数值越小越优先）
+- `QUEUE_PRIORITY_MISSING_ZH`：缺简中任务优先级（默认 `1`）
+- `QUEUE_PRIORITY_DEFAULT`：默认任务优先级（默认 `5`）
 
 ### 运行日志与运行记录
 - 全局日志：`LOG_DIR/worker.log`
@@ -234,6 +238,8 @@ docker exec <container> sh -c 'touch /watch/.scan_now'
 - `SUBTITLE_EXCLUDE_TITLES`：字幕标题排除关键词（默认 `sign,song,karaoke`）
 - `SUBTITLE_INDEX`：指定字幕轨 index（留空则自动）
 - `SUBTITLE_LANG`：指定字幕轨语言前缀（留空则自动）
+- `SUBTITLE_REUSE_MIN_CONFIDENCE`：复用字幕的最低语言置信度阈值（默认 `0.35`）
+- `SUBTITLE_REUSE_SAMPLE_CHARS`：复用字幕的采样字符数（默认 `2000`）
 - `AUDIO_PREFER_LANGS`：音轨优先语言（默认 `jpn,ja,eng,en`）
 - `AUDIO_EXCLUDE_TITLES`：音轨标题排除关键词（默认 `commentary,コメンタリー`）
 - `AUDIO_INDEX`：指定音轨 index（留空则自动）

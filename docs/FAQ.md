@@ -5,6 +5,7 @@
 - **优先只翻字幕**：当视频内封或同目录有字幕（且不是简体中文）时，建议启用字幕复用（`USE_EXISTING_SUBTITLE=true`，`SUBTITLE_MODE=reuse_if_good`）。
 - **强制录音识别**：当字幕质量差/错位，或没有合适字幕时，建议使用 ASR（`SUBTITLE_MODE=ignore` 或 `USE_EXISTING_SUBTITLE=false`）。
 - **只要简体字幕就跳过**：默认检测到简体中文字幕会跳过识别与翻译，可用 `IGNORE_SIMPLIFIED_SUBTITLE=true` 强制继续翻译。
+- **字幕置信度阈值**：可通过 `SUBTITLE_REUSE_MIN_CONFIDENCE` 提高复用门槛，低于阈值则回退 ASR。
 
 ## 强制运行时如何选择策略？
 
