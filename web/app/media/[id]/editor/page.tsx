@@ -112,6 +112,21 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
     [outputs]
   );
 
+  const filteredIndices = useMemo(() => {
+    if (!query) return blocks.map((_block, idx) => idx);
+    const q = query.toLowerCase();
+    return blocks
+      .map((block, idx) => ({ block, idx }))
+      .filter(({ block }) => block.text.toLowerCase().includes(q) || block.index.includes(q))
+      .map(({ idx }) => idx);
+  }, [blocks, query]);
+
+  useEffect(() => {
+    if (filteredIndices.length) {
+      setCurrent(filteredIndices[0]);
+    }
+  }, [filteredIndices]);
+
   return (
     <main className="min-h-screen px-6 py-10">
       <AuthGuard />
@@ -174,17 +189,3 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
     </main>
   );
 }
-  const filteredIndices = useMemo(() => {
-    if (!query) return blocks.map((_block, idx) => idx);
-    const q = query.toLowerCase();
-    return blocks
-      .map((block, idx) => ({ block, idx }))
-      .filter(({ block }) => block.text.toLowerCase().includes(q) || block.index.includes(q))
-      .map(({ idx }) => idx);
-  }, [blocks, query]);
-
-  useEffect(() => {
-    if (filteredIndices.length) {
-      setCurrent(filteredIndices[0]);
-    }
-  }, [query]);
