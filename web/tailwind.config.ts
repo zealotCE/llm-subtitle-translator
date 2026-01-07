@@ -6,16 +6,16 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#1f1c18",
-        sand: "#f7f4ef",
-        ember: "#c65d31",
-        dune: "#6f655a",
-        panel: "#fff8ef",
-        border: "#e4d8c8",
+        ink: "#0f0f0f",
+        sand: "#f7f7f5",
+        ember: "#111111",
+        dune: "#6b6b6b",
+        panel: "#ffffff",
+        border: "#e5e7eb",
       },
       fontFamily: {
-        display: ["'IBM Plex Serif'", "'Noto Serif SC'", "serif"],
-        sans: ["'IBM Plex Sans'", "'Noto Sans SC'", "sans-serif"],
+        display: ["'Space Grotesk'", "'Noto Sans SC'", "sans-serif"],
+        sans: ["'Source Sans 3'", "'Noto Sans SC'", "sans-serif"],
       },
     },
   },

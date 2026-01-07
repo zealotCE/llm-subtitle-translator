@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AuthGuard } from "@/components/auth-guard";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
   const [runs, setRuns] = useState<RunItem[]>([]);
   const [tab, setTab] = useState<"subtitles" | "runs" | "metadata" | "files">("subtitles");
   const [subtitleList, setSubtitleList] = useState<
-    { id: string; kind: string; path: string; lang?: string }[]
+    { id: string; kind: string; path: string; lang?: string; updated_at?: number; size?: number }[]
   >([]);
   const [preview, setPreview] = useState("");
   const [meta, setMeta] = useState<MetadataForm>({
@@ -81,6 +82,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
   const [metaAdvanced, setMetaAdvanced] = useState(false);
   const [metaJson, setMetaJson] = useState("{}");
   const [metaMessage, setMetaMessage] = useState("");
+  const { t } = useI18n();
 
   const fetchDetail = async () => {
     const res = await fetch(`/api/v3/media/${params.id}`);
@@ -148,17 +150,37 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
     return (
       <main className="min-h-screen px-6 py-10">
         <AuthGuard />
-        <p className="text-sm text-dune">加载中…</p>
+        <p className="text-sm text-neutral-500">{t("common.loading")}</p>
       </main>
     );
   }
+
+  const fileName = (value: string) => value.split("/").pop() || value;
+  const kindLabel = (kind: string) => {
+    if (kind === "raw") return t("media.subtitle.kind.raw");
+    if (kind === "zh") return t("media.subtitle.kind.zh");
+    if (kind === "bi") return t("media.subtitle.kind.bi");
+    return t("media.subtitle.kind.other");
+  };
+  const formatSize = (size?: number) => {
+    if (!size && size !== 0) return "-";
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+    return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  };
 
   const outputItems = [
     media.outputs.raw ? { label: "raw", path: media.outputs.raw.path } : null,
     media.outputs.zh ? { label: "zh", path: media.outputs.zh.path } : null,
     media.outputs.bi ? { label: "bi", path: media.outputs.bi.path } : null,
     ...(media.outputs.other || []).map((item) => ({ label: "other", path: item.path })),
-  ].filter(Boolean) as { label: string; path: string }[];
+  ]
+    .filter(Boolean)
+    .map((item) => ({ label: kindLabel(item.label), path: item.path })) as {
+    label: string;
+    path: string;
+  }[];
 
   return (
     <main className="min-h-screen px-6 py-10">
@@ -167,24 +189,26 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="section-title">{media.title}</h1>
-            <p className="text-sm text-dune">{media.path}</p>
+            <p className="text-sm text-neutral-500" title={media.path}>
+              {media.path}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             {media.status === "failed" ? (
-              <Button onClick={() => triggerAction("retry")}>Retry</Button>
+              <Button onClick={() => triggerAction("retry")}>{t("common.retry")}</Button>
             ) : null}
             {!media.outputs.zh ? (
               <Button variant="outline" onClick={() => triggerAction("translate")}>
-                Translate
+                {t("common.translate")}
               </Button>
             ) : null}
             {media.status === "archived" ? (
               <Button variant="ghost" onClick={() => triggerAction("unarchive")}>
-                Unarchive
+                {t("common.unarchive")}
               </Button>
             ) : (
               <Button variant="ghost" onClick={() => triggerAction("archive")}>
-                Archive
+                {t("common.archive")}
               </Button>
             )}
           </div>
@@ -192,10 +216,10 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
 
         <div className="flex flex-wrap gap-2">
           {[
-            { key: "subtitles", label: "Subtitles" },
-            { key: "runs", label: "Runs" },
-            { key: "metadata", label: "Metadata" },
-            { key: "files", label: "Files" },
+            { key: "subtitles", label: t("media.subtitles") },
+            { key: "runs", label: t("media.runs") },
+            { key: "metadata", label: t("media.metadata") },
+            { key: "files", label: t("media.files") },
           ].map((item) => (
             <Button
               key={item.key}
@@ -209,48 +233,59 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
 
         {tab === "subtitles" ? (
           <div className="glass-panel rounded-2xl p-4">
-            <h2 className="text-sm font-semibold text-ink">Subtitles</h2>
-            <div className="mt-3 space-y-2 text-sm text-dune">
+            <h2 className="text-sm font-semibold text-neutral-900">{t("media.subtitles")}</h2>
+            <div className="mt-3 space-y-2 text-sm text-neutral-600">
               {subtitleList.length ? (
                 subtitleList.map((item) => (
                   <div key={item.id} className="flex items-center justify-between gap-3">
-                    <span>
-                      {item.kind}
-                      {item.lang ? ` (${item.lang})` : ""}
-                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-neutral-900" title={item.path}>
+                        {fileName(item.path)}
+                      </div>
+                      <div className="text-xs text-neutral-500">
+                        {kindLabel(item.kind)}
+                        {item.lang ? ` · ${item.lang}` : ""}
+                        {item.updated_at ? ` · ${new Date(item.updated_at * 1000).toLocaleString()}` : ""}
+                        {item.size ? ` · ${formatSize(item.size)}` : ""}
+                      </div>
+                    </div>
                     <div className="flex gap-2">
                       <a
                         className={buttonVariants({ size: "sm", variant: "outline" })}
                         href={`/api/v3/media/${media.id}/subtitles/${item.id}/download`}
                       >
-                        下载
+                        {t("common.download")}
                       </a>
                       <Link
                         className={buttonVariants({ size: "sm", variant: "outline" })}
                         href={`/media/${media.id}/editor`}
                       >
-                        编辑
+                        {t("common.edit")}
                       </Link>
                       <Button size="sm" variant="ghost" onClick={() => fetchPreview(item.id)}>
-                        预览
+                        {t("common.preview")}
                       </Button>
                     </div>
                   </div>
                 ))
               ) : (
-                <p>暂无字幕输出</p>
+                <p>{t("media.subtitles.empty")}</p>
               )}
             </div>
-            <div className="mt-4 rounded-xl border border-border/60 bg-white/80 p-3 text-xs text-dune">
-              {preview ? <pre className="whitespace-pre-wrap">{preview}</pre> : <p>点击“预览”查看字幕内容</p>}
+            <div className="mt-4 rounded-xl border border-border/60 bg-white p-3 text-xs text-neutral-600">
+              {preview ? (
+                <pre className="whitespace-pre-wrap">{preview}</pre>
+              ) : (
+                <p>{t("media.subtitles.previewHint")}</p>
+              )}
             </div>
           </div>
         ) : null}
 
         {tab === "runs" ? (
           <div className="glass-panel rounded-2xl p-4">
-            <h2 className="text-sm font-semibold text-ink">Runs</h2>
-            <div className="mt-3 space-y-2 text-sm text-dune">
+            <h2 className="text-sm font-semibold text-neutral-900">{t("media.runs")}</h2>
+            <div className="mt-3 space-y-2 text-sm text-neutral-600">
               {runs.length ? (
                 runs.map((run) => (
                   <div key={run.id} className="flex items-center justify-between gap-3">
@@ -258,7 +293,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                       <div>
                         {run.type} · {run.status}
                       </div>
-                      <div className="text-xs text-dune">
+                      <div className="text-xs text-neutral-500">
                         {new Date(run.started_at * 1000).toLocaleString()}
                         {run.finished_at ? ` → ${new Date(run.finished_at * 1000).toLocaleString()}` : ""}
                       </div>
@@ -266,7 +301,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                     </div>
                     <div className="flex gap-2">
                       <Link className={buttonVariants({ size: "sm", variant: "ghost" })} href={`/runs/${run.id}`}>
-                        日志
+                        {t("run.log")}
                       </Link>
                       <Button
                         size="sm"
@@ -275,13 +310,13 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                           fetch(`/api/v3/runs/${run.id}/retry`, { method: "POST" }).then(fetchDetail)
                         }
                       >
-                        Retry
+                        {t("common.retry")}
                       </Button>
                     </div>
                   </div>
                 ))
               ) : (
-                <p>暂无运行记录</p>
+                <p>{t("media.runs.empty")}</p>
               )}
             </div>
           </div>
@@ -289,150 +324,150 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
 
         {tab === "metadata" ? (
           <div className="glass-panel rounded-2xl p-4">
-            <h2 className="text-sm font-semibold text-ink">Metadata</h2>
-            <p className="mt-2 text-sm text-dune">通过表单补全作品信息。</p>
+            <h2 className="text-sm font-semibold text-neutral-900">{t("media.metadata")}</h2>
+            <p className="mt-2 text-sm text-neutral-500">{t("media.metadata.desc")}</p>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div className="grid gap-2">
-                <label className="text-sm text-dune">原始标题</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.titleOriginal")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.title_original}
                   onChange={(e) => setMeta((prev) => ({ ...prev, title_original: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">简体标题</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.titleZh")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.title_zh}
                   onChange={(e) => setMeta((prev) => ({ ...prev, title_zh: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">英文标题</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.titleEn")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.title_en}
                   onChange={(e) => setMeta((prev) => ({ ...prev, title_en: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">语言提示</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.languageHints")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.language_hints}
                   onChange={(e) => setMeta((prev) => ({ ...prev, language_hints: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">类型</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.type")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.type}
                   onChange={(e) => setMeta((prev) => ({ ...prev, type: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">年份</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.year")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.year}
                   onChange={(e) => setMeta((prev) => ({ ...prev, year: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">季</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.season")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.season}
                   onChange={(e) => setMeta((prev) => ({ ...prev, season: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">集</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.episode")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.episode}
                   onChange={(e) => setMeta((prev) => ({ ...prev, episode: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">本集标题（日）</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.episodeTitleJa")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.episode_title_ja}
                   onChange={(e) => setMeta((prev) => ({ ...prev, episode_title_ja: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">本集标题（简中）</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.episodeTitleZh")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.episode_title_zh}
                   onChange={(e) => setMeta((prev) => ({ ...prev, episode_title_zh: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">本集标题（英文）</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.episodeTitleEn")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.episode_title_en}
                   onChange={(e) => setMeta((prev) => ({ ...prev, episode_title_en: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">TMDb ID</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.tmdbId")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.external_tmdb}
                   onChange={(e) => setMeta((prev) => ({ ...prev, external_tmdb: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">Bangumi ID</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.bangumiId")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.external_bangumi}
                   onChange={(e) => setMeta((prev) => ({ ...prev, external_bangumi: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">WMDB ID</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.wmdbId")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.external_wmdb}
                   onChange={(e) => setMeta((prev) => ({ ...prev, external_wmdb: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-sm text-dune">IMDb ID</label>
+                <label className="text-sm text-neutral-500">{t("media.meta.imdbId")}</label>
                 <input
-                  className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+                  className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
                   value={meta.external_imdb}
                   onChange={(e) => setMeta((prev) => ({ ...prev, external_imdb: e.target.value }))}
                 />
               </div>
             </div>
             <div className="mt-4 grid gap-2">
-              <label className="text-sm text-dune">术语表（JSON）</label>
+              <label className="text-sm text-neutral-500">{t("media.meta.glossary")}</label>
               <textarea
-                className="min-h-[120px] rounded-xl border border-border bg-white/90 p-3 text-sm"
+                className="min-h-[120px] rounded-xl border border-border bg-white p-3 text-sm"
                 value={meta.glossary}
                 onChange={(e) => setMeta((prev) => ({ ...prev, glossary: e.target.value }))}
               />
             </div>
             <div className="mt-4 grid gap-2">
-              <label className="text-sm text-dune">角色列表（JSON）</label>
+              <label className="text-sm text-neutral-500">{t("media.meta.characters")}</label>
               <textarea
-                className="min-h-[120px] rounded-xl border border-border bg-white/90 p-3 text-sm"
+                className="min-h-[120px] rounded-xl border border-border bg-white p-3 text-sm"
                 value={meta.characters}
                 onChange={(e) => setMeta((prev) => ({ ...prev, characters: e.target.value }))}
               />
             </div>
             <div className="mt-4 grid gap-2">
-              <label className="text-sm text-dune">备注</label>
+              <label className="text-sm text-neutral-500">{t("media.meta.notes")}</label>
               <textarea
-                className="min-h-[80px] rounded-xl border border-border bg-white/90 p-3 text-sm"
+                className="min-h-[80px] rounded-xl border border-border bg-white p-3 text-sm"
                 value={meta.notes}
                 onChange={(e) => setMeta((prev) => ({ ...prev, notes: e.target.value }))}
               />
@@ -446,7 +481,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                     try {
                       glossary = JSON.parse(meta.glossary);
                     } catch {
-                      setMetaMessage("术语表 JSON 格式错误");
+                      setMetaMessage(t("media.metadata.glossaryError"));
                       return;
                     }
                   }
@@ -455,7 +490,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                     try {
                       characters = JSON.parse(meta.characters);
                     } catch {
-                      setMetaMessage("角色列表 JSON 格式错误");
+                      setMetaMessage(t("media.metadata.charactersError"));
                       return;
                     }
                   }
@@ -492,13 +527,13 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                   });
                   const data = await res.json();
                   if (!res.ok || !data.ok) {
-                    setMetaMessage(data.message || "保存失败");
+                    setMetaMessage(data.message || t("common.saveFailed"));
                     return;
                   }
-                  setMetaMessage("已保存");
+                  setMetaMessage(t("media.metadata.saved"));
                 }}
               >
-                保存元数据
+                {t("media.metadata.save")}
               </Button>
               <Button
                 variant="outline"
@@ -506,14 +541,14 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                   setMetaAdvanced((prev) => !prev);
                 }}
               >
-                {metaAdvanced ? "收起高级 JSON" : "展开高级 JSON"}
+                {metaAdvanced ? t("media.metadata.advancedClose") : t("media.metadata.advancedOpen")}
               </Button>
             </div>
-            {metaMessage ? <p className="mt-2 text-sm text-ember">{metaMessage}</p> : null}
+            {metaMessage ? <p className="mt-2 text-sm text-rose-600">{metaMessage}</p> : null}
             {metaAdvanced ? (
               <div className="mt-4">
                 <textarea
-                  className="min-h-[200px] w-full rounded-xl border border-border bg-white/90 p-3 text-sm"
+                  className="min-h-[200px] w-full rounded-xl border border-border bg-white p-3 text-sm"
                   value={metaJson}
                   onChange={(e) => setMetaJson(e.target.value)}
                 />
@@ -526,7 +561,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                     try {
                       parsed = JSON.parse(metaJson);
                     } catch {
-                      setMetaMessage("JSON 格式错误");
+                      setMetaMessage(t("media.metadata.jsonError"));
                       return;
                     }
                     const res = await fetch(`/api/v3/media/${params.id}/metadata`, {
@@ -536,13 +571,13 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
                     });
                     const data = await res.json();
                     if (!res.ok || !data.ok) {
-                      setMetaMessage(data.message || "保存失败");
+                      setMetaMessage(data.message || t("common.saveFailed"));
                       return;
                     }
-                    setMetaMessage("已保存");
+                    setMetaMessage(t("media.metadata.saved"));
                   }}
                 >
-                  保存高级 JSON
+                  {t("media.metadata.saveAdvanced")}
                 </Button>
               </div>
             ) : null}
@@ -550,8 +585,8 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
         ) : null}
 
         {tab === "files" ? (
-          <div className="glass-panel rounded-2xl p-4 text-sm text-dune">
-            <h2 className="text-sm font-semibold text-ink">Files</h2>
+          <div className="glass-panel rounded-2xl p-4 text-sm text-neutral-600">
+            <h2 className="text-sm font-semibold text-neutral-900">{t("media.files")}</h2>
             <div className="mt-2 space-y-1">
               <div>video: {media.path}</div>
               {outputItems.map((item) => (

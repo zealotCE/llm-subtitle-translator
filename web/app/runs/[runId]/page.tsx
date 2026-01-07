@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
   const [run, setRun] = useState<RunItem | null>(null);
   const [log, setLog] = useState("");
   const [message, setMessage] = useState("");
+  const { t } = useI18n();
 
   const fetchRun = async () => {
     const res = await fetch(`/api/v3/runs/${params.runId}`);
@@ -43,7 +45,7 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
     const res = await fetch(`/api/v3/runs/${params.runId}/retry`, { method: "POST" });
     const data = await res.json();
     if (!res.ok || !data.ok) {
-      setMessage(data.message || "重试失败");
+      setMessage(data.message || t("common.failed"));
       return;
     }
     fetchRun();
@@ -58,36 +60,54 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
     <main className="min-h-screen px-6 py-10">
       <AuthGuard />
       <section className="mx-auto max-w-4xl space-y-6">
-        <h1 className="section-title">Run Detail</h1>
+        <h1 className="section-title">{t("run.title")}</h1>
         {run ? (
           <div className="glass-panel rounded-2xl p-4 space-y-2 text-sm">
-            <div>ID: {run.id}</div>
-            <div>Media: {run.media_id}</div>
-            <div>Type: {run.type}</div>
-            <div>Status: {run.status}</div>
-            <div>Started: {new Date(run.started_at * 1000).toLocaleString()}</div>
-            {run.finished_at ? <div>Finished: {new Date(run.finished_at * 1000).toLocaleString()}</div> : null}
-            {run.finished_at ? <div>Duration: {run.finished_at - run.started_at}s</div> : null}
+            <div>
+              {t("run.field.id")}: {run.id}
+            </div>
+            <div>
+              {t("run.field.media")}: {run.media_id}
+            </div>
+            <div>
+              {t("run.field.type")}: {run.type}
+            </div>
+            <div>
+              {t("run.field.status")}: {run.status}
+            </div>
+            <div>
+              {t("run.field.started")}: {new Date(run.started_at * 1000).toLocaleString()}
+            </div>
+            {run.finished_at ? (
+              <div>
+                {t("run.field.finished")}: {new Date(run.finished_at * 1000).toLocaleString()}
+              </div>
+            ) : null}
+            {run.finished_at ? (
+              <div>
+                {t("run.field.duration")}: {run.finished_at - run.started_at}s
+              </div>
+            ) : null}
             {run.error ? <div className="text-rose-600">Error: {run.error}</div> : null}
             {run.log_ref ? <div>Log: {run.log_ref}</div> : null}
           </div>
         ) : (
-          <p className="text-sm text-dune">加载中…</p>
+          <p className="text-sm text-neutral-500">{t("common.loading")}</p>
         )}
-        {message ? <p className="text-sm text-ember">{message}</p> : null}
-        <div className="glass-panel rounded-2xl p-4 text-sm text-dune">
+        {message ? <p className="text-sm text-rose-600">{message}</p> : null}
+        <div className="glass-panel rounded-2xl p-4 text-sm text-neutral-600">
           <div className="mb-2 flex items-center justify-between">
-            <span>日志</span>
+            <span>{t("run.log")}</span>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={fetchLog}>
-                刷新
+                {t("common.refresh")}
               </Button>
               <Button size="sm" onClick={retryRun}>
-                Retry
+                {t("common.retry")}
               </Button>
             </div>
           </div>
-          <pre className="whitespace-pre-wrap">{log || "暂无日志"}</pre>
+          <pre className="whitespace-pre-wrap">{log || t("run.noLog")}</pre>
         </div>
       </section>
     </main>

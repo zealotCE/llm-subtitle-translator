@@ -5,6 +5,7 @@ import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useI18n } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -15,50 +16,51 @@ function isSensitive(key: string) {
 
 const GROUPS = [
   {
-    title: "Watch & Scan",
+    titleKey: "settings.group.watch",
     fields: [
-      { key: "WATCH_DIRS", label: "Watch Dirs" },
-      { key: "WATCH_RECURSIVE", label: "递归扫描" },
-      { key: "SCAN_INTERVAL", label: "扫描间隔（秒）" },
-      { key: "OUTPUT_TO_SOURCE_DIR", label: "输出到源目录" },
+      { key: "WATCH_DIRS", labelKey: "settings.label.watchDirs", wide: true },
+      { key: "WATCH_RECURSIVE", labelKey: "settings.label.watchRecursive" },
+      { key: "SCAN_INTERVAL", labelKey: "settings.label.scanInterval" },
+      { key: "OUTPUT_TO_SOURCE_DIR", labelKey: "settings.label.outputToSource" },
     ],
   },
   {
-    title: "ASR",
+    titleKey: "settings.group.asr",
     fields: [
-      { key: "ASR_MODE", label: "ASR 模式" },
-      { key: "ASR_MODEL", label: "ASR 模型" },
-      { key: "LANGUAGE_HINTS", label: "语言提示" },
+      { key: "ASR_MODE", labelKey: "settings.label.asrMode" },
+      { key: "ASR_MODEL", labelKey: "settings.label.asrModel" },
+      { key: "LANGUAGE_HINTS", labelKey: "settings.label.languageHints", wide: true },
     ],
   },
   {
-    title: "Translation",
+    titleKey: "settings.group.translation",
     fields: [
-      { key: "LLM_MODEL", label: "翻译模型" },
-      { key: "LLM_BASE_URL", label: "Base URL" },
-      { key: "BATCH_LINES", label: "Batch Lines" },
-      { key: "MAX_CONCURRENT_TRANSLATIONS", label: "并发数" },
+      { key: "LLM_MODEL", labelKey: "settings.label.llmModel", wide: true },
+      { key: "LLM_BASE_URL", labelKey: "settings.label.llmBaseUrl", wide: true },
+      { key: "BATCH_LINES", labelKey: "settings.label.batchLines" },
+      { key: "MAX_CONCURRENT_TRANSLATIONS", labelKey: "settings.label.concurrency" },
     ],
   },
   {
-    title: "OSS",
+    titleKey: "settings.group.oss",
     fields: [
-      { key: "OSS_ENDPOINT", label: "Endpoint" },
-      { key: "OSS_BUCKET", label: "Bucket" },
-      { key: "OSS_URL_MODE", label: "URL Mode" },
+      { key: "OSS_ENDPOINT", labelKey: "settings.label.ossEndpoint" },
+      { key: "OSS_BUCKET", labelKey: "settings.label.ossBucket" },
+      { key: "OSS_URL_MODE", labelKey: "settings.label.ossUrlMode" },
     ],
   },
   {
-    title: "Web/Auth",
+    titleKey: "settings.group.web",
     fields: [
-      { key: "WEB_AUTH_ENABLED", label: "启用登录" },
-      { key: "WEB_AUTH_USER", label: "登录用户" },
-      { key: "WEB_AUTH_PASSWORD", label: "登录密码" },
+      { key: "WEB_AUTH_ENABLED", labelKey: "settings.label.webAuthEnabled" },
+      { key: "WEB_AUTH_USER", labelKey: "settings.label.webAuthUser" },
+      { key: "WEB_AUTH_PASSWORD", labelKey: "settings.label.webAuthPassword" },
     ],
   },
 ];
 
 export default function SettingsPage() {
+  const { t } = useI18n();
   const [values, setValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -75,7 +77,7 @@ export default function SettingsPage() {
       })
       .catch(() => {
         if (!active) return;
-        setMessage("加载配置失败");
+        setMessage(t("settings.loadFailed"));
       })
       .finally(() => {
         if (!active) return;
@@ -99,11 +101,11 @@ export default function SettingsPage() {
         body: JSON.stringify({ updates: values }),
       });
       if (!res.ok) {
-        throw new Error("保存失败");
+        throw new Error(t("settings.saveFailed"));
       }
-      setMessage("已保存配置");
+      setMessage(t("settings.saved"));
     } catch {
-      setMessage("保存失败");
+      setMessage(t("settings.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -113,19 +115,19 @@ export default function SettingsPage() {
     <main className="min-h-screen px-6 py-10">
       <AuthGuard />
       <section className="mx-auto max-w-4xl space-y-6">
-        <h1 className="section-title">设置</h1>
+        <h1 className="section-title">{t("settings.title")}</h1>
         {GROUPS.map((group) => (
-          <Card key={group.title}>
+          <Card key={group.titleKey}>
             <CardHeader>
-              <CardTitle>{group.title}</CardTitle>
+              <CardTitle>{t(group.titleKey)}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="grid gap-4 md:grid-cols-2">
               {group.fields.map((field) => (
-                <div key={field.key} className="grid gap-2">
-                  <label className="text-sm text-dune">{field.label}</label>
+                <div key={field.key} className={`grid gap-2 ${field.wide ? "md:col-span-2" : ""}`}>
+                  <label className="text-sm text-neutral-500">{t(field.labelKey)}</label>
                   <Input
                     value={values[field.key] || ""}
-                    placeholder={isSensitive(field.key) ? "已隐藏，留空不修改" : ""}
+                    placeholder={isSensitive(field.key) ? t("settings.hidden") : ""}
                     onChange={(event) =>
                       setValues((prev) => ({
                         ...prev,
@@ -140,11 +142,11 @@ export default function SettingsPage() {
         ))}
         <Card>
           <CardHeader>
-            <CardTitle>Advanced</CardTitle>
+            <CardTitle>{t("settings.advanced")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <Button variant="outline" onClick={() => setAdvanced((prev) => !prev)}>
-              {advanced ? "收起 .env 编辑器" : "展开 .env 编辑器"}
+              {advanced ? t("settings.advancedClose") : t("settings.advancedOpen")}
             </Button>
             {advanced ? (
               <div className="space-y-4">
@@ -158,7 +160,7 @@ export default function SettingsPage() {
                     }
                   }}
                 >
-                  加载完整 .env
+                  {t("settings.loadEnv")}
                 </Button>
                 <Button
                   variant="ghost"
@@ -174,34 +176,36 @@ export default function SettingsPage() {
                     URL.revokeObjectURL(url);
                   }}
                 >
-                  导出配置 JSON
+                  {t("settings.exportJson")}
                 </Button>
                 {loading ? (
-                  <p className="text-sm text-dune">正在加载配置…</p>
+                  <p className="text-sm text-neutral-500">{t("settings.loading")}</p>
                 ) : (
-                  entries.map(([key, value]) => (
-                    <div key={key} className="grid gap-2">
-                      <label className="text-sm text-dune">{key}</label>
-                      <Input
-                        value={value}
-                        placeholder={isSensitive(key) ? "已隐藏，留空不修改" : ""}
-                        onChange={(event) =>
-                          setValues((prev) => ({
-                            ...prev,
-                            [key]: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                  ))
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {entries.map(([key, value]) => (
+                      <div key={key} className="grid gap-2">
+                        <label className="text-sm text-neutral-500">{key}</label>
+                        <Input
+                          value={value}
+                          placeholder={isSensitive(key) ? t("settings.hidden") : ""}
+                          onChange={(event) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              [key]: event.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             ) : null}
           </CardContent>
         </Card>
-        {message ? <p className="text-sm text-ember">{message}</p> : null}
+        {message ? <p className="text-sm text-rose-600">{message}</p> : null}
         <Button onClick={handleSave} disabled={saving || loading}>
-          {saving ? "保存中…" : "保存配置"}
+          {saving ? t("settings.saving") : t("settings.save")}
         </Button>
       </section>
     </main>

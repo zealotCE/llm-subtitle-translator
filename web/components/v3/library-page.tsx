@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AuthGuard } from "@/components/auth-guard";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useI18n } from "@/lib/i18n";
 
 type MediaItem = {
   id: string;
@@ -28,26 +30,19 @@ type MediaItem = {
   archived: boolean;
 };
 
-const filters = [
-  { key: "missing_zh", label: "缺简中" },
-  { key: "failed", label: "失败" },
-  { key: "running", label: "处理中" },
-  { key: "archived", label: "已归档" },
-];
-
 function statusBadge(status: string) {
   const base = "rounded-full px-2 py-1 text-xs font-semibold";
   switch (status) {
     case "running":
-      return `${base} bg-amber-100 text-amber-800`;
+      return `${base} bg-amber-100 text-amber-900`;
     case "done":
-      return `${base} bg-emerald-100 text-emerald-800`;
+      return `${base} bg-emerald-100 text-emerald-900`;
     case "failed":
-      return `${base} bg-rose-100 text-rose-800`;
+      return `${base} bg-rose-100 text-rose-900`;
     case "archived":
-      return `${base} bg-slate-200 text-slate-700`;
+      return `${base} bg-neutral-200 text-neutral-700`;
     default:
-      return `${base} bg-slate-100 text-slate-700`;
+      return `${base} bg-neutral-100 text-neutral-700`;
   }
 }
 
@@ -62,6 +57,8 @@ function downloadFile(name: string, content: string) {
 }
 
 export default function LibraryPage() {
+  const router = useRouter();
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -70,6 +67,13 @@ export default function LibraryPage() {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState("updated_desc");
   const [pageSize, setPageSize] = useState(50);
+
+  const filters = [
+    { key: "missing_zh", label: t("library.filter.missingZh") },
+    { key: "failed", label: t("library.filter.failed") },
+    { key: "running", label: t("library.filter.running") },
+    { key: "archived", label: t("library.filter.archived") },
+  ];
 
   const fetchMedia = async () => {
     const params = new URLSearchParams();
@@ -81,7 +85,7 @@ export default function LibraryPage() {
     const res = await fetch(`/api/v3/media?${params.toString()}`);
     const data = await res.json();
     if (!res.ok || !data.ok) {
-      setMessage(data.message || "加载失败");
+      setMessage(data.message || t("common.loadFailed"));
       return;
     }
     setItems(data.items || []);
@@ -109,7 +113,7 @@ export default function LibraryPage() {
     const res = await fetch(`/api/v3/media/${id}/${action}`, { method: "POST" });
     const data = await res.json();
     if (!res.ok || !data.ok) {
-      setMessage(data.message || "操作失败");
+      setMessage(data.message || t("common.actionFailed"));
       return;
     }
     fetchMedia();
@@ -156,38 +160,38 @@ export default function LibraryPage() {
     <main className="min-h-screen px-6 py-10">
       <AuthGuard />
       <section className="mx-auto max-w-6xl space-y-6">
-        <h1 className="section-title">Library</h1>
+        <h1 className="section-title">{t("library.title")}</h1>
         <div className="flex flex-wrap items-center gap-3">
           <Input
-            placeholder="搜索文件名或标题"
+            placeholder={t("library.searchPlaceholder")}
             className="max-w-sm"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <Button onClick={fetchMedia}>搜索</Button>
+          <Button onClick={fetchMedia}>{t("common.search")}</Button>
           <select
-            className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+            className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
             value={sort}
             onChange={(event) => setSort(event.target.value)}
           >
-            <option value="updated_desc">最近更新</option>
-            <option value="created_desc">最近创建</option>
-            <option value="failed_first">失败优先</option>
+            <option value="updated_desc">{t("library.sort.updated")}</option>
+            <option value="created_desc">{t("library.sort.created")}</option>
+            <option value="failed_first">{t("library.sort.failed")}</option>
           </select>
           <select
-            className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+            className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
             value={String(pageSize)}
             onChange={(event) => setPageSize(Number(event.target.value))}
           >
-            <option value="20">20/页</option>
-            <option value="50">50/页</option>
-            <option value="100">100/页</option>
+            <option value="20">20/{t("library.pageSize")}</option>
+            <option value="50">50/{t("library.pageSize")}</option>
+            <option value="100">100/{t("library.pageSize")}</option>
           </select>
           <Button variant="outline" onClick={triggerScan}>
-            Rescan
+            {t("library.rescan")}
           </Button>
           <Link className={buttonVariants({ variant: "outline" })} href="/import">
-            Import Media
+            {t("library.import")}
           </Link>
           {filters.map((filter) => (
             <Button
@@ -198,88 +202,78 @@ export default function LibraryPage() {
               {filter.label}
             </Button>
           ))}
-          <span className="text-sm text-dune">总数 {total} · 当前 {filteredCount} · 缺简中 {missingZhCount}</span>
+          <span className="text-sm text-neutral-500">
+            {t("library.count")} {total} · {t("library.filtered")} {filteredCount} · {t("library.missing")}{" "}
+            {missingZhCount}
+          </span>
           <Button variant="ghost" onClick={() => downloadFile("media.json", JSON.stringify(items, null, 2))}>
-            导出 JSON
+            {t("library.exportJson")}
           </Button>
           <Button variant="ghost" onClick={() => downloadFile("media.csv", csv)}>
-            导出 CSV
+            {t("library.exportCsv")}
           </Button>
           <Button
             variant="ghost"
             onClick={() => downloadFile("missing_zh.json", JSON.stringify(missingItems, null, 2))}
           >
-            导出缺简中 JSON
+            {t("library.exportMissingJson")}
           </Button>
           <Button variant="ghost" onClick={() => downloadFile("missing_zh.csv", csvMissing)}>
-            导出缺简中 CSV
+            {t("library.exportMissingCsv")}
           </Button>
         </div>
-        {message ? <p className="text-sm text-ember">{message}</p> : null}
+        {message ? <p className="text-sm text-rose-600">{message}</p> : null}
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>标题</TableHead>
-              <TableHead>状态</TableHead>
-              <TableHead>字幕</TableHead>
-              <TableHead>操作</TableHead>
+              <TableHead>{t("library.table.title")}</TableHead>
+              <TableHead>{t("library.table.status")}</TableHead>
+              <TableHead>{t("library.table.subtitles")}</TableHead>
+              <TableHead>{t("library.table.actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {items.length ? (
               items.map((item) => (
-                <TableRow key={item.id}>
+                <TableRow
+                  key={item.id}
+                  className="cursor-pointer transition hover:bg-neutral-50"
+                  onClick={() => router.push(`/media/${item.id}`)}
+                >
                   <TableCell className="max-w-md truncate">
-                    <div className="font-medium text-ink">{item.title}</div>
-                    <div className="text-xs text-dune truncate">{item.path}</div>
+                    <div className="font-medium text-neutral-900">{item.title}</div>
+                    <div className="text-xs text-neutral-500 truncate" title={item.path}>
+                      {item.path}
+                    </div>
                   </TableCell>
                   <TableCell>
-                    <span className={statusBadge(item.status)}>{item.status}</span>
+                    <span className={statusBadge(item.status)}>
+                      {t(`status.${item.status}`) || item.status}
+                    </span>
                   </TableCell>
                   <TableCell className="space-x-2 text-xs">
                     <span className={item.outputs?.raw ? "text-emerald-700" : "text-slate-400"}>raw</span>
                     <span className={item.outputs?.zh ? "text-emerald-700" : "text-slate-400"}>zh</span>
                     <span className={item.outputs?.bi ? "text-emerald-700" : "text-slate-400"}>bi</span>
                   </TableCell>
-                  <TableCell className="flex flex-wrap gap-2">
-                    <Link className={buttonVariants({ size: "sm", variant: "outline" })} href={`/media/${item.id}`}>
-                      Open
-                    </Link>
-                    {item.outputs?.raw || item.outputs?.zh || item.outputs?.bi ? (
-                      <Link
-                        className={buttonVariants({ size: "sm", variant: "ghost" })}
-                        href={`/media/${item.id}/editor`}
-                      >
-                        Edit
-                      </Link>
-                    ) : null}
+                  <TableCell className="flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
                     {item.status === "failed" ? (
                       <Button size="sm" onClick={() => handleAction(item.id, "retry")}>
-                        Retry
+                        {t("common.retry")}
                       </Button>
                     ) : null}
                     {!item.outputs?.zh ? (
                       <Button size="sm" variant="outline" onClick={() => handleAction(item.id, "translate")}>
-                        Translate
+                        {t("common.translate")}
                       </Button>
-                    ) : null}
-                    {item.outputs?.zh || item.outputs?.raw || item.outputs?.bi ? (
-                      <a
-                        className={buttonVariants({ size: "sm", variant: "outline" })}
-                        href={`/api/v3/media/${item.id}/subtitles/${
-                          item.outputs?.zh?.id || item.outputs?.bi?.id || item.outputs?.raw?.id
-                        }/download`}
-                      >
-                        Export
-                      </a>
                     ) : null}
                     {item.archived ? (
                       <Button size="sm" variant="ghost" onClick={() => handleAction(item.id, "unarchive")}>
-                        Unarchive
+                        {t("common.unarchive")}
                       </Button>
                     ) : (
                       <Button size="sm" variant="ghost" onClick={() => handleAction(item.id, "archive")}>
-                        Archive
+                        {t("common.archive")}
                       </Button>
                     )}
                   </TableCell>
@@ -287,23 +281,25 @@ export default function LibraryPage() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={4}>暂无媒体</TableCell>
+                <TableCell colSpan={4}>{t("library.empty")}</TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
-        <div className="flex items-center gap-3 text-sm text-dune">
+        <div className="flex items-center gap-3 text-sm text-neutral-500">
           <Button size="sm" variant="outline" onClick={() => setPage((p) => Math.max(1, p - 1))}>
-            上一页
+            {t("common.prev")}
           </Button>
           <Button
             size="sm"
             variant="outline"
             onClick={() => setPage((p) => (items.length === 0 ? p : p + 1))}
           >
-            下一页
+            {t("common.next")}
           </Button>
-          <span>第 {page} 页 · 共 {total} 条</span>
+          <span>
+            {t("common.page")} {page} · {t("common.of")} {total}
+          </span>
         </div>
       </section>
     </main>

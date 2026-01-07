@@ -5,6 +5,7 @@ import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useI18n } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,7 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
   const [current, setCurrent] = useState(0);
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
+  const { t } = useI18n();
 
   const loadOutputs = async () => {
     const res = await fetch(`/api/v3/media/${params.id}/subtitles`);
@@ -98,17 +100,19 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
     });
     const data = await res.json();
     if (!res.ok || !data.ok) {
-      setMessage(data.message || "保存失败");
+      setMessage(data.message || t("common.saveFailed"));
       return;
     }
-    setMessage("已保存");
+    setMessage(t("editor.saved"));
     if (mode === "save_as") {
       await loadOutputs();
     }
   };
 
+  const fileName = (value: string) => value.split("/").pop() || value;
+
   const options = useMemo(
-    () => outputs.map((item) => ({ id: item.id, label: `${item.kind} · ${item.path}` })),
+    () => outputs.map((item) => ({ id: item.id, label: `${item.kind} · ${fileName(item.path)}` })),
     [outputs]
   );
 
@@ -131,11 +135,11 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
     <main className="min-h-screen px-6 py-10">
       <AuthGuard />
       <section className="mx-auto max-w-6xl space-y-6">
-        <h1 className="section-title">Subtitle Editor</h1>
+        <h1 className="section-title">{t("editor.title")}</h1>
         <div className="flex flex-wrap items-center gap-3">
           <input
-            className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
-            placeholder="搜索字幕内容/序号"
+            className="h-10 rounded-xl border border-border bg-white px-3 text-sm"
+            placeholder={t("editor.search")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -146,14 +150,14 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
               </option>
             ))}
           </Select>
-          <Button onClick={() => handleSave("save")}>保存覆盖</Button>
+          <Button onClick={() => handleSave("save")}>{t("editor.save")}</Button>
           <Button variant="outline" onClick={() => handleSave("save_as")}>
-            另存版本
+            {t("editor.saveAs")}
           </Button>
-          {message ? <span className="text-sm text-ember">{message}</span> : null}
+          {message ? <span className="text-sm text-rose-600">{message}</span> : null}
         </div>
         <div className="grid gap-6 md:grid-cols-[280px,1fr]">
-          <div className="glass-panel rounded-2xl p-3 text-sm text-dune">
+          <div className="glass-panel rounded-2xl p-3 text-sm text-neutral-600">
             {filteredIndices.length ? (
               filteredIndices.map((idx: number) => {
                 const block = blocks[idx];
@@ -162,21 +166,21 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
                   key={`${block.index}-${idx}`}
                   onClick={() => setCurrent(idx)}
                   className={`mb-2 w-full rounded-xl border px-3 py-2 text-left ${
-                    idx === current ? "border-ember bg-ember/10 text-ink" : "border-transparent hover:border-border"
+                    idx === current ? "border-neutral-900 bg-neutral-900/5 text-neutral-900" : "border-transparent hover:border-border"
                   }`}
                 >
-                  <div className="text-xs text-dune">#{block.index}</div>
-                  <div className="truncate text-sm text-ink">{block.text || "(空)"}</div>
+                  <div className="text-xs text-neutral-500">#{block.index}</div>
+                  <div className="truncate text-sm text-neutral-900">{block.text || "(空)"}</div>
                 </button>
                 );
               })
             ) : (
-              <p>暂无字幕内容</p>
+              <p>{t("editor.empty")}</p>
             )}
           </div>
           <div className="glass-panel rounded-2xl p-4">
-            <div className="mb-2 text-xs text-dune">
-              {currentBlock ? `${currentBlock.index} · ${currentBlock.time}` : "选择字幕条目"}
+            <div className="mb-2 text-xs text-neutral-500">
+              {currentBlock ? `${currentBlock.index} · ${currentBlock.time}` : t("editor.selectHint")}
             </div>
             <Textarea
               className="min-h-[420px]"

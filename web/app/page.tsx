@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AuthGuard } from "@/components/auth-guard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ type Summary = {
 
 export default function HomePage() {
   const [summary, setSummary] = useState<Summary | null>(null);
+  const { t } = useI18n();
 
   useEffect(() => {
     fetch("/api/v3/summary")
@@ -43,75 +45,77 @@ export default function HomePage() {
       <AuthGuard />
       <section className="mx-auto max-w-6xl space-y-10">
         <div className="flex flex-col gap-4">
-          <p className="text-sm uppercase tracking-[0.3em] text-dune">Auto Subtitle Studio</p>
-          <h1 className="font-display text-4xl text-ember md:text-5xl">Dashboard</h1>
-          <p className="max-w-2xl text-dune">关注媒体处理进度与失败项，快速进入 Library 处理。</p>
+          <p className="text-xs uppercase tracking-[0.35em] text-neutral-500">Auto Subtitle Studio</p>
+          <h1 className="font-display text-4xl text-neutral-900 md:text-5xl">{t("dashboard.title")}</h1>
+          <p className="max-w-2xl text-neutral-500">{t("dashboard.subtitle")}</p>
           <div className="flex gap-3">
             <Link href="/library" className={buttonVariants({ variant: "default" })}>
-              打开 Library
+              {t("dashboard.openLibrary")}
             </Link>
             <Link href="/activity" className={buttonVariants({ variant: "outline" })}>
-              查看 Activity
+              {t("dashboard.viewActivity")}
             </Link>
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader>
-              <CardTitle>总媒体数</CardTitle>
-              <CardDescription>所有已发现的媒体</CardDescription>
+              <CardTitle>{t("dashboard.total")}</CardTitle>
+              <CardDescription>{t("dashboard.totalDesc")}</CardDescription>
             </CardHeader>
-            <CardContent className="text-3xl text-ember">{summary?.counts.total ?? "-"}</CardContent>
+            <CardContent className="text-3xl text-neutral-900">{summary?.counts.total ?? "-"}</CardContent>
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>处理中</CardTitle>
-              <CardDescription>pending / running</CardDescription>
+              <CardTitle>{t("dashboard.active")}</CardTitle>
+              <CardDescription>{t("dashboard.activeDesc")}</CardDescription>
             </CardHeader>
-            <CardContent className="text-3xl text-ember">
+            <CardContent className="text-3xl text-neutral-900">
               {summary ? summary.counts.pending + summary.counts.running : "-"}
             </CardContent>
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>缺简中</CardTitle>
-              <CardDescription>需要翻译的条目</CardDescription>
+              <CardTitle>{t("dashboard.missingZh")}</CardTitle>
+              <CardDescription>{t("dashboard.missingZhDesc")}</CardDescription>
             </CardHeader>
-            <CardContent className="text-3xl text-ember">{summary?.counts.missing_zh ?? "-"}</CardContent>
+            <CardContent className="text-3xl text-neutral-900">
+              {summary?.counts.missing_zh ?? "-"}
+            </CardContent>
           </Card>
         </div>
         <div className="grid gap-6 md:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>最近失败</CardTitle>
-              <CardDescription>需要关注的媒体</CardDescription>
+              <CardTitle>{t("dashboard.recentFailed")}</CardTitle>
+              <CardDescription>{t("dashboard.recentFailedDesc")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm text-dune">
+            <CardContent className="space-y-2 text-sm text-neutral-500">
               {summary?.recent_failed?.length ? (
                 summary.recent_failed.map((item) => (
-                  <Link key={item.id} href={`/media/${item.id}`} className="block hover:text-ember">
+                  <Link key={item.id} href={`/media/${item.id}`} className="block hover:text-neutral-900">
                     {item.title}
                   </Link>
                 ))
               ) : (
-                <p>暂无失败记录</p>
+                <p>{t("library.empty")}</p>
               )}
             </CardContent>
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>最近完成</CardTitle>
-              <CardDescription>最新完成的字幕</CardDescription>
+              <CardTitle>{t("dashboard.recentDone")}</CardTitle>
+              <CardDescription>{t("dashboard.recentDoneDesc")}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm text-dune">
+            <CardContent className="space-y-2 text-sm text-neutral-500">
               {summary?.recent_done?.length ? (
                 summary.recent_done.map((item) => (
-                  <Link key={item.id} href={`/media/${item.id}`} className="block hover:text-ember">
+                  <Link key={item.id} href={`/media/${item.id}`} className="block hover:text-neutral-900">
                     {item.title}
                   </Link>
                 ))
               ) : (
-                <p>暂无完成记录</p>
+                <p>{t("library.empty")}</p>
               )}
             </CardContent>
           </Card>

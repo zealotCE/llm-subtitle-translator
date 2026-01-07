@@ -3373,6 +3373,20 @@ def build_srt(response, segment_mode="post"):
     return subs, srt.compose(subs)
 
 
+class MemoryTranslateCache:
+    def __init__(self):
+        self.cache = {}
+        self.lock = threading.Lock()
+
+    def get(self, key):
+        with self.lock:
+            return self.cache.get(key)
+
+    def set(self, key, text):
+        with self.lock:
+            self.cache[key] = text
+
+
 class TranslateCache:
     def __init__(self, db_path):
         self.db_path = db_path
@@ -4219,7 +4233,16 @@ def process_video(video_path):
         stage = "translate"
         if TRANSLATE:
             try:
-                cache = TranslateCache(CACHE_DB)
+                try:
+                    cache = TranslateCache(CACHE_DB)
+                except sqlite3.Error as exc:
+                    log(
+                        "WARN",
+                        "翻译缓存不可用，降级为内存缓存",
+                        path=video_path,
+                        error=str(exc),
+                    )
+                    cache = MemoryTranslateCache()
                 llm_client = llm_client_from_env()
                 sample_lines = []
                 for sub in subs:
