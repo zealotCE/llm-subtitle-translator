@@ -20,6 +20,7 @@ type RunItem = {
 export default function RunDetailPage({ params }: { params: { runId: string } }) {
   const [run, setRun] = useState<RunItem | null>(null);
   const [log, setLog] = useState("");
+  const [message, setMessage] = useState("");
 
   const fetchRun = async () => {
     const res = await fetch(`/api/v3/runs/${params.runId}`);
@@ -35,6 +36,17 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
     if (data.ok) {
       setLog(data.log || "");
     }
+  };
+
+  const retryRun = async () => {
+    setMessage("");
+    const res = await fetch(`/api/v3/runs/${params.runId}/retry`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      setMessage(data.message || "重试失败");
+      return;
+    }
+    fetchRun();
   };
 
   useEffect(() => {
@@ -60,12 +72,18 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
         ) : (
           <p className="text-sm text-dune">加载中…</p>
         )}
+        {message ? <p className="text-sm text-ember">{message}</p> : null}
         <div className="glass-panel rounded-2xl p-4 text-sm text-dune">
           <div className="mb-2 flex items-center justify-between">
             <span>日志</span>
-            <Button size="sm" variant="outline" onClick={fetchLog}>
-              刷新
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={fetchLog}>
+                刷新
+              </Button>
+              <Button size="sm" onClick={retryRun}>
+                Retry
+              </Button>
+            </div>
           </div>
           <pre className="whitespace-pre-wrap">{log || "暂无日志"}</pre>
         </div>

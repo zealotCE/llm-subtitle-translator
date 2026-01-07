@@ -1,5 +1,5 @@
 import { getAuthFromRequest } from "@/lib/server/auth";
-import { loadEnv, resolvePath, saveEnv } from "@/lib/server/env";
+import { isSensitiveKey, loadEnv, resolvePath, saveEnv } from "@/lib/server/env";
 
 export const runtime = "nodejs";
 
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
   }
   const values: Record<string, string> = {};
   for (const key of SETTINGS_KEYS) {
-    values[key] = env[key] || "";
+    values[key] = isSensitiveKey(key) ? "" : env[key] || "";
   }
   return Response.json({ ok: true, values });
 }
@@ -47,7 +47,11 @@ export async function POST(request: Request) {
   const payload: Record<string, string> = {};
   for (const key of SETTINGS_KEYS) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
-      payload[key] = String(updates[key] ?? "");
+      const value = String(updates[key] ?? "");
+      if (isSensitiveKey(key) && value === "") {
+        continue;
+      }
+      payload[key] = value;
     }
   }
   await saveEnv(resolvePath(".env"), { ...env, ...payload });

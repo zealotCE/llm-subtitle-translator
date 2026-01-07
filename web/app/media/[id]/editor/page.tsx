@@ -46,6 +46,7 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [current, setCurrent] = useState(0);
   const [message, setMessage] = useState("");
+  const [query, setQuery] = useState("");
 
   const loadOutputs = async () => {
     const res = await fetch(`/api/v3/media/${params.id}/subtitles`);
@@ -117,6 +118,12 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
       <section className="mx-auto max-w-6xl space-y-6">
         <h1 className="section-title">Subtitle Editor</h1>
         <div className="flex flex-wrap items-center gap-3">
+          <input
+            className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+            placeholder="搜索字幕内容/序号"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
           <Select value={selected} onChange={(event) => setSelected(event.target.value)}>
             {options.map((item) => (
               <option key={item.id} value={item.id}>
@@ -132,8 +139,10 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
         </div>
         <div className="grid gap-6 md:grid-cols-[280px,1fr]">
           <div className="glass-panel rounded-2xl p-3 text-sm text-dune">
-            {blocks.length ? (
-              blocks.map((block, idx) => (
+            {filteredIndices.length ? (
+              filteredIndices.map((idx) => {
+                const block = blocks[idx];
+                return (
                 <button
                   key={`${block.index}-${idx}`}
                   onClick={() => setCurrent(idx)}
@@ -144,7 +153,8 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
                   <div className="text-xs text-dune">#{block.index}</div>
                   <div className="truncate text-sm text-ink">{block.text || "(空)"}</div>
                 </button>
-              ))
+                );
+              })
             ) : (
               <p>暂无字幕内容</p>
             )}
@@ -164,3 +174,17 @@ export default function SubtitleEditor({ params }: { params: { id: string } }) {
     </main>
   );
 }
+  const filteredIndices = useMemo(() => {
+    if (!query) return blocks.map((_block, idx) => idx);
+    const q = query.toLowerCase();
+    return blocks
+      .map((block, idx) => ({ block, idx }))
+      .filter(({ block }) => block.text.toLowerCase().includes(q) || block.index.includes(q))
+      .map(({ idx }) => idx);
+  }, [blocks, query]);
+
+  useEffect(() => {
+    if (filteredIndices.length) {
+      setCurrent(filteredIndices[0]);
+    }
+  }, [query]);

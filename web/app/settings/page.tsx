@@ -160,6 +160,22 @@ export default function SettingsPage() {
                 >
                   加载完整 .env
                 </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    const blob = new Blob([JSON.stringify(values, null, 2)], {
+                      type: "application/json;charset=utf-8",
+                    });
+                    const url = URL.createObjectURL(blob);
+                    const anchor = document.createElement("a");
+                    anchor.href = url;
+                    anchor.download = "settings.json";
+                    anchor.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  导出配置 JSON
+                </Button>
                 {loading ? (
                   <p className="text-sm text-dune">正在加载配置…</p>
                 ) : (

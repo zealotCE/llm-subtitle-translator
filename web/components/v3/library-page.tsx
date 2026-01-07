@@ -67,12 +67,16 @@ export default function LibraryPage() {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [total, setTotal] = useState(0);
   const [message, setMessage] = useState("");
+  const [page, setPage] = useState(1);
+  const [sort, setSort] = useState("updated_desc");
 
   const fetchMedia = async () => {
     const params = new URLSearchParams();
     if (query) params.set("query", query);
     if (selected.length) params.set("filter", selected.join(","));
-    params.set("page_size", "200");
+    params.set("page", String(page));
+    params.set("page_size", "50");
+    params.set("sort", sort);
     const res = await fetch(`/api/v3/media?${params.toString()}`);
     const data = await res.json();
     if (!res.ok || !data.ok) {
@@ -85,10 +89,19 @@ export default function LibraryPage() {
 
   useEffect(() => {
     fetchMedia();
-  }, []);
+  }, [page, sort]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setPage(1);
+      fetchMedia();
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [query, selected]);
 
   const toggleFilter = (key: string) => {
     setSelected((prev) => (prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]));
+    setPage(1);
   };
 
   const handleAction = async (id: string, action: "archive" | "unarchive" | "retry" | "translate") => {
@@ -151,6 +164,15 @@ export default function LibraryPage() {
             onChange={(event) => setQuery(event.target.value)}
           />
           <Button onClick={fetchMedia}>搜索</Button>
+          <select
+            className="h-10 rounded-xl border border-border bg-white/90 px-3 text-sm"
+            value={sort}
+            onChange={(event) => setSort(event.target.value)}
+          >
+            <option value="updated_desc">最近更新</option>
+            <option value="created_desc">最近创建</option>
+            <option value="failed_first">失败优先</option>
+          </select>
           <Button variant="outline" onClick={triggerScan}>
             Rescan
           </Button>
@@ -260,6 +282,19 @@ export default function LibraryPage() {
             )}
           </TableBody>
         </Table>
+        <div className="flex items-center gap-3 text-sm text-dune">
+          <Button size="sm" variant="outline" onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            上一页
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setPage((p) => (items.length === 0 ? p : p + 1))}
+          >
+            下一页
+          </Button>
+          <span>第 {page} 页 · 共 {total} 条</span>
+        </div>
       </section>
     </main>
   );

@@ -46,6 +46,14 @@ export default function ActivityPage() {
     fetchActivity();
   }, [page]);
 
+  useEffect(() => {
+    if (page !== 1) {
+      setPage(1);
+      return;
+    }
+    fetchActivity();
+  }, [type, status]);
+
   return (
     <main className="min-h-screen px-6 py-10">
       <AuthGuard />
