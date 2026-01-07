@@ -83,6 +83,7 @@ docker run --rm -p 8000:8000 \
 - `WEB_CONFIG_PATH`：默认 `/app/.env`
 - `WEB_SCHEMA_PATH`：默认 `/app/.env.example`
 - `WEB_DB_PATH`：任务数据库路径（默认 `web.db`，容器内建议 `/app/web.db`）
+- `WEB_PROJECT_ROOT`：Web UI 解析相对路径的根目录（默认父目录）
 - `WEB_UPLOAD_DIR`：上传保存目录（为空则取 `WATCH_DIRS` 第一个）
 - `WEB_UPLOAD_OVERWRITE`：是否允许覆盖同名文件（默认 `false`）
 - `WEB_MAX_UPLOAD_MB`：上传大小上限（默认 `2048`）
@@ -107,7 +108,7 @@ docker run --rm -p 8000:8000 \
 - `WEB_AUTH_TTL`：登录有效期（秒，默认 `86400`）
 
 ### Web UI（shadcn/ui，预览）
-新 UI 位于 `web/`，当前作为预览版本，页面骨架已完成但尚未接入正式 API。
+新 UI 位于 `web/`，提供设置/任务/日志/媒体/字幕/元数据等基础能力。
 
 本地运行：
 
@@ -122,6 +123,9 @@ Docker 运行（示例）：
 ```bash
 docker compose up -d web
 ```
+
+Web 读取根目录 `.env`，并会访问 `WATCH_DIRS/OUT_DIR/LOG_DIR` 指向的目录，请确保 compose 中已挂载对应卷。
+如启用 `WEB_AUTH_ENABLED=true`，先访问 `http://localhost:3000/login` 登录。
 
 Legacy 的 `watcher/web.py` 仍可继续使用。
 

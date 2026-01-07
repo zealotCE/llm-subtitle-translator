@@ -15,4 +15,15 @@ services:
     container_name: auto-subtitle-web
     ports:
       - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - WEB_PROJECT_ROOT=/app
+      - WEB_CONFIG_PATH=.env
+    volumes:
+      - ./.env:/app/.env
+      - ./.web:/app/.web
+      - ./watch:/watch
+      - ./output:/output
+      - ./logs:/app/logs
     restart: unless-stopped
