@@ -1,6 +1,6 @@
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
-import { getMediaDirs, getSimplifiedSubtitlePaths, scanVideos } from "@/lib/server/media";
+import { getMediaDirs, getSimplifiedSubtitlePaths, scanVideosCached } from "@/lib/server/media";
 import { loadMediaState, saveMediaState } from "@/lib/server/storage";
 import fs from "fs/promises";
 import path from "path";
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const keyword = url.searchParams.get("q") || "";
   const dirs = getMediaDirs(env);
   const recursive = (env.WEB_MEDIA_RECURSIVE || "true") === "true";
-  const items = await scanVideos(dirs, recursive);
+  const items = await scanVideosCached(env, dirs, recursive);
   const state = await loadMediaState();
   const rows = await Promise.all(
     items

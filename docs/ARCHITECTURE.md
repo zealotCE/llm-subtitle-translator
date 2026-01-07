@@ -52,6 +52,7 @@ Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 
 - 使用 `inotifywait` 监听写入完成与移动事件
 - 定时扫描 `WATCH_DIRS` 兜底补处理
+- Web 侧使用扫描缓存（TTL）避免频繁全量 walk
 - 支持触发文件（`TRIGGER_SCAN_FILE`）与信号触发即时扫描
 - `.lock` 控制并发与重复处理，支持过期清理
 
@@ -102,6 +103,7 @@ Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 - 失败日志：`name.translate_failed*.log`
 - 运行记录：`name.<hash>.run.json`
 - 单次运行日志：`name.<hash>.run.<run_id>.log`
+- 全局日志支持轮转（`LOG_MAX_BYTES` / `LOG_MAX_BACKUPS`）
 
 ## 关键设计决策
 

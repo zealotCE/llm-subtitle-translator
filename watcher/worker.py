@@ -207,6 +207,8 @@ LOG_DIR = os.getenv("LOG_DIR", "").strip()
 if not LOG_DIR:
     LOG_DIR = os.path.join(OUT_DIR, "logs")
 LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "worker.log").strip()
+LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
+LOG_MAX_BACKUPS = int(os.getenv("LOG_MAX_BACKUPS", "5"))
 LOG_LOCK = threading.Lock()
 RUN_LOG_CONTEXT = threading.local()
 
@@ -758,6 +760,7 @@ def log(level, message, **kwargs):
             path = os.path.join(LOG_DIR, LOG_FILE_NAME)
             line = json.dumps(record, ensure_ascii=False)
             with LOG_LOCK:
+                _rotate_log_if_needed(path)
                 with open(path, "a", encoding="utf-8") as f:
                     f.write(line + "\n")
         except Exception:  # noqa: BLE001
@@ -772,6 +775,24 @@ def log(level, message, **kwargs):
                     f.write(line + "\n")
         except Exception:  # noqa: BLE001
             pass
+
+
+def _rotate_log_if_needed(path):
+    if LOG_MAX_BACKUPS <= 0 or LOG_MAX_BYTES <= 0:
+        return
+    try:
+        if not os.path.exists(path):
+            return
+        if os.path.getsize(path) <= LOG_MAX_BYTES:
+            return
+        for idx in range(LOG_MAX_BACKUPS - 1, 0, -1):
+            src = f"{path}.{idx}"
+            dst = f"{path}.{idx + 1}"
+            if os.path.exists(src):
+                os.replace(src, dst)
+        os.replace(path, f"{path}.1")
+    except OSError:
+        pass
 
 
 def ensure_dirs():

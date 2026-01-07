@@ -2,7 +2,7 @@ import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
 import { resolvePath } from "@/lib/server/env";
-import { getMediaDirs, getOutputDir, loadRunMeta, scanVideos } from "@/lib/server/media";
+import { getMediaDirs, getOutputDir, loadRunMeta, scanVideosCached } from "@/lib/server/media";
 import type {
   ActivityItem,
   MediaItem,
@@ -41,7 +41,11 @@ export async function saveState(state: StoreState) {
 export async function scanAndSync(env: Record<string, string>) {
   const state = await loadState();
   const mediaDirs = getMediaDirs(env);
-  const items = await scanVideos(mediaDirs, (env.WATCH_RECURSIVE || "true") === "true");
+  const items = await scanVideosCached(
+    env,
+    mediaDirs,
+    (env.WATCH_RECURSIVE || "true") === "true"
+  );
   const now = Math.floor(Date.now() / 1000);
   const seenIds = new Set<string>();
 

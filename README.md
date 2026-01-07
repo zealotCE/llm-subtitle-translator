@@ -110,6 +110,10 @@ docker run --rm -p 8000:8000 \
 - `WEB_WAL_CHECKPOINT_EVERY`：SQLite WAL 定期 checkpoint 频率（默认 `50` 次写入）
 - `WEB_MEDIA_DIRS`：媒体库扫描目录（默认使用 `WATCH_DIRS`）
 - `WEB_MEDIA_RECURSIVE`：媒体库是否递归扫描（默认 `true`）
+- `WEB_MEDIA_SCAN_CACHE_TTL`：媒体库扫描缓存 TTL 秒（默认 `10`，`0` 关闭缓存）
+- `WEB_MEDIA_SCAN_CACHE_PATH`：媒体库扫描缓存路径（默认 `.web/media_scan_cache.json`）
+- `WEB_FFPROBE_CACHE_TTL`：ffprobe 缓存 TTL 秒（默认 `3600`，`0` 关闭缓存）
+- `WEB_FFPROBE_CACHE_PATH`：ffprobe 缓存路径（默认 `.web/ffprobe_cache.json`）
 - `WEB_ARCHIVE_DIR`：归档目录（设置后归档会移动文件）
 - `WEB_ALLOW_DELETE`：允许删除媒体文件（默认 `false`）
 - `WEB_METADATA_DIR`：人工元数据保存目录（默认 `metadata`）
@@ -147,6 +151,8 @@ Legacy 的 `watcher/web.py` 仍可继续使用。
 - `OUTPUT_TO_SOURCE_DIR`：是否将输出字幕/标记文件写回视频所在目录（默认 `true`）
 - `LOG_DIR`：日志文件输出目录（为空则仅输出到 stdout）
 - `LOG_FILE_NAME`：日志文件名（默认 `worker.log`）
+- `LOG_MAX_BYTES`：日志单文件最大字节数（默认 `10485760`）
+- `LOG_MAX_BACKUPS`：日志轮转保留份数（默认 `5`）
 - `TRIGGER_SCAN_FILE`：触发扫描的文件名（默认 `.scan_now`）
 - `WORKER_CONCURRENCY`：处理线程数（默认 `1`）
 - `MAX_ACTIVE_JOBS`：同时处理的任务上限（默认 `WORKER_CONCURRENCY`）

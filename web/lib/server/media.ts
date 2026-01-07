@@ -3,10 +3,13 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import crypto from "crypto";
+import { resolvePath } from "@/lib/server/env";
 
 const VIDEO_EXTS = new Set([".mp4", ".mkv", ".webm", ".mov", ".avi"]);
 const SUBTITLE_EXTS = new Set([".srt", ".ass", ".ssa", ".vtt", ".sub", ".sup"]);
 const execFileAsync = promisify(execFile);
+const DEFAULT_MEDIA_SCAN_CACHE_TTL = 10;
+const DEFAULT_FFPROBE_CACHE_TTL = 3600;
 
 export function parseDirs(raw: string) {
   return raw
@@ -138,6 +141,17 @@ async function findExternalSubtitles(env: Record<string, string>, videoPath: str
 }
 
 async function findEmbeddedSubtitles(videoPath: string) {
+  const ttlRaw = parseInt(process.env.WEB_FFPROBE_CACHE_TTL || "", 10);
+  const ttl = Number.isFinite(ttlRaw) ? ttlRaw : DEFAULT_FFPROBE_CACHE_TTL;
+  const cachePath = resolvePath(process.env.WEB_FFPROBE_CACHE_PATH || ".web/ffprobe_cache.json");
+  const stat = await safeStat(videoPath);
+  if (!stat) return 0;
+  const cache = await loadFfprobeCache(cachePath);
+  const now = Math.floor(Date.now() / 1000);
+  const key = `${videoPath}:${stat.mtimeMs}`;
+  if (ttl > 0 && cache[key] && now - cache[key].ts <= ttl) {
+    return cache[key].count;
+  }
   try {
     const { stdout } = await execFileAsync(
       "ffprobe",
@@ -156,6 +170,11 @@ async function findEmbeddedSubtitles(videoPath: string) {
     );
     const data = JSON.parse(stdout || "{}") as { streams?: unknown[] };
     const streams = Array.isArray(data.streams) ? data.streams : [];
+    if (ttl > 0) {
+      cache[key] = { ts: now, count: streams.length };
+      pruneFfprobeCache(cache, now, ttl);
+      await saveFfprobeCache(cachePath, cache);
+    }
     return streams.length;
   } catch {
     return 0;
@@ -240,6 +259,37 @@ export async function scanVideos(dirs: string[], recursive: boolean) {
   return results.sort((a, b) => b.mtime - a.mtime);
 }
 
+export async function scanVideosCached(
+  env: Record<string, string>,
+  dirs: string[],
+  recursive: boolean
+) {
+  const ttl = parseInt(env.WEB_MEDIA_SCAN_CACHE_TTL || "", 10);
+  const cacheTtl = Number.isFinite(ttl) ? ttl : DEFAULT_MEDIA_SCAN_CACHE_TTL;
+  if (cacheTtl <= 0) {
+    return scanVideos(dirs, recursive);
+  }
+  const cachePath = resolvePath(env.WEB_MEDIA_SCAN_CACHE_PATH || ".web/media_scan_cache.json");
+  const cache = await loadScanCache(cachePath);
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    cache &&
+    now - cache.cached_at <= cacheTtl &&
+    cache.recursive === recursive &&
+    arraysEqual(cache.dirs, dirs)
+  ) {
+    return cache.items;
+  }
+  const items = await scanVideos(dirs, recursive);
+  await saveScanCache(cachePath, {
+    cached_at: now,
+    dirs,
+    recursive,
+    items,
+  });
+  return items;
+}
+
 export function inferStatus(videoPath: string, outputDir: string) {
   const base = path.basename(videoPath, path.extname(videoPath));
   const done = path.join(outputDir, `${base}.done`);
@@ -262,6 +312,77 @@ export async function loadJobMeta(videoPath: string) {
     return {};
   }
   return {};
+}
+
+type ScanCache = {
+  cached_at: number;
+  dirs: string[];
+  recursive: boolean;
+  items: { path: string; size: number; mtime: number }[];
+};
+
+async function loadScanCache(cachePath: string): Promise<ScanCache | null> {
+  try {
+    const raw = await fs.readFile(cachePath, "utf-8");
+    const data = JSON.parse(raw) as ScanCache;
+    if (!data || !Array.isArray(data.items) || !Array.isArray(data.dirs)) {
+      return null;
+    }
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function saveScanCache(cachePath: string, data: ScanCache) {
+  try {
+    await fs.mkdir(path.dirname(cachePath), { recursive: true });
+    await fs.writeFile(cachePath, JSON.stringify(data), "utf-8");
+  } catch {
+    // ignore
+  }
+}
+
+function arraysEqual(a: string[], b: string[]) {
+  if (a.length !== b.length) return false;
+  return a.every((value, idx) => value === b[idx]);
+}
+
+type FfprobeCache = Record<string, { ts: number; count: number }>;
+
+async function loadFfprobeCache(cachePath: string): Promise<FfprobeCache> {
+  try {
+    const raw = await fs.readFile(cachePath, "utf-8");
+    const data = JSON.parse(raw) as FfprobeCache;
+    return data || {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveFfprobeCache(cachePath: string, cache: FfprobeCache) {
+  try {
+    await fs.mkdir(path.dirname(cachePath), { recursive: true });
+    await fs.writeFile(cachePath, JSON.stringify(cache), "utf-8");
+  } catch {
+    // ignore
+  }
+}
+
+function pruneFfprobeCache(cache: FfprobeCache, now: number, ttl: number) {
+  for (const [key, entry] of Object.entries(cache)) {
+    if (!entry || now - entry.ts > ttl) {
+      delete cache[key];
+    }
+  }
+}
+
+async function safeStat(targetPath: string) {
+  try {
+    return await fs.stat(targetPath);
+  } catch {
+    return null;
+  }
 }
 
 function exists(p: string) {

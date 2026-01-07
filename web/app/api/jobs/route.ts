@@ -1,6 +1,6 @@
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
-import { getOutputDir, getWatchDirs, inferStatus, loadJobMeta, scanVideos } from "@/lib/server/media";
+import { getOutputDir, getWatchDirs, inferStatus, loadJobMeta, scanVideosCached } from "@/lib/server/media";
 import fs from "fs/promises";
 import path from "path";
 
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const keyword = url.searchParams.get("q") || "";
   const watchDirs = getWatchDirs(env);
-  const items = await scanVideos(watchDirs, (env.WATCH_RECURSIVE || "true") === "true");
+  const items = await scanVideosCached(env, watchDirs, (env.WATCH_RECURSIVE || "true") === "true");
   const jobs = await Promise.all(
     items
     .filter((item) => (keyword ? item.path.includes(keyword) : true))

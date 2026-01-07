@@ -54,3 +54,8 @@ LLM_TITLE_ALIAS_ENABLED=false
 - 全局日志：`LOG_DIR/worker.log`
 - 单次运行日志：`<name>.<hash>.run.<run_id>.log`
 - 运行记录：`<name>.<hash>.run.json`（包含阶段/状态/日志路径）
+
+## 媒体库扫描很慢怎么办？
+
+- Web 侧支持扫描缓存（`WEB_MEDIA_SCAN_CACHE_TTL`），在短时间内复用扫描结果
+- 如果需要每次都全量扫描，把 `WEB_MEDIA_SCAN_CACHE_TTL=0`
