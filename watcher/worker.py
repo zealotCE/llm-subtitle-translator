@@ -858,6 +858,7 @@ def _log_progress(stage, video_path, percent, total=None, done=None):
         path=video_path,
         stage=stage,
         progress=percent,
+        model=ASR_MODEL if stage.startswith("asr") else LLM_MODEL,
         total=total,
         done=done,
     )
@@ -4626,6 +4627,7 @@ def process_video(video_path):
         _update_run_meta(run_meta_path, {"stage": stage, "progress": 20})
         if subs is None:
             if asr_mode == "realtime":
+                log("INFO", "实时 ASR 开始", path=video_path, model=ASR_MODEL)
                 asr_progress_logged = set()
                 def _asr_progress(done, total):
                     stage_percent = int(100 * done / max(total, 1))
@@ -4745,6 +4747,7 @@ def process_video(video_path):
         translate_enabled = TRANSLATE or force_translate
         if translate_enabled:
             try:
+                log("INFO", "翻译开始", path=video_path, model=LLM_MODEL)
                 try:
                     cache = TranslateCache(CACHE_DB)
                 except sqlite3.Error as exc:
