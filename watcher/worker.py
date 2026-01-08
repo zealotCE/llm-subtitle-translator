@@ -4982,7 +4982,15 @@ def process_video(video_path):
         with open(done_path, "w", encoding="utf-8") as f:
             f.write("done")
         finished_at = int(time.time())
-        log("DONE", "处理完成", path=video_path, srt=srt_path)
+        log(
+            "DONE",
+            "处理完成",
+            path=video_path,
+            srt=srt_path,
+            asr_model=ASR_MODEL,
+            llm_model=LLM_MODEL,
+            duration_seconds=finished_at - run_started_at,
+        )
         _write_run_meta(
             run_meta_path,
             {
