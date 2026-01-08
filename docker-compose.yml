@@ -1,6 +1,6 @@
 services:
   watcher:
-    image: ghcr.io/zealotce/llm-subtitle-translator:latest
+    image: ghcr.io/zealotce/llm-subtitle-translator:${WATCHER_IMAGE_TAG:-latest}
     container_name: auto-subtitle-watcher
     env_file:
       - .env
@@ -8,9 +8,19 @@ services:
       - ./watch:/watch
       - ./output:/output
       - ./test_video:/test_video
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import os,time,sys; p=os.getenv('HEALTHCHECK_FILE','/tmp/worker.heartbeat'); sys.exit(0 if os.path.exists(p) and time.time()-os.path.getmtime(p) < 120 else 1)\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
   web:
-    image: ghcr.io/zealotce/llm-subtitle-translator-web:latest
+    image: ghcr.io/zealotce/llm-subtitle-translator-web:${WEB_IMAGE_TAG:-latest}
     container_name: auto-subtitle-web
     ports:
       - "3000:3000"
@@ -26,4 +36,14 @@ services:
       - ./test_video:/test_video
       - ./output:/output
       - ./logs:/app/logs
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"require('http').get('http://127.0.0.1:3000/', res => process.exit(res.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped

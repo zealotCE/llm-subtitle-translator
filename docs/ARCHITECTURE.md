@@ -111,6 +111,31 @@ Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 - 单次运行日志：`name.<hash>.run.<run_id>.log`
 - 全局日志支持轮转（`LOG_MAX_BYTES` / `LOG_MAX_BACKUPS`）
 
+### 7.1 日志字段规范（结构化）
+
+全局日志与单次运行日志均为 JSON 行格式，基础字段：
+
+- `ts`：UTC 时间（ISO8601）
+- `level`：日志级别
+- `message`：简要说明
+
+常见可选字段（按需出现）：
+
+- `path`：视频路径
+- `run_id`：单次运行 ID
+- `stage`：处理阶段（如 `probe/asr_call/translate`）
+- `status`：运行状态（`running/done/failed`）
+- `error`：错误信息
+- `duration_ms`：耗时（如有）
+
+### 7.2 可选 Metrics（文件输出）
+
+启用 `METRICS_ENABLED=true` 后，会写入 `METRICS_PATH`（默认 `/tmp/worker.metrics.json`）：
+
+- `runs_total` / `runs_done` / `runs_failed`
+- `last_status` / `last_finished_at` / `last_duration_ms`
+- `updated_at`
+
 ### 8. ASR 失败保护与告警
 
 - 失败冷却：`ASR_FAIL_COOLDOWN_SECONDS`
@@ -129,6 +154,15 @@ Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 - **错误隔离**：单文件失败不阻塞整体服务
 - **独立运行日志**：每次运行独立 log，便于定位阶段失败
 - **配置化与无密钥内置**：所有密钥由 `.env` 注入
+
+## 部署与扩容建议
+
+- 当前锁与状态基于本地文件（`.lock`/`.done`/`run.json`），默认适合单实例。
+- 多实例共享同一目录可能出现重复处理或状态覆盖，不建议直接水平扩容。
+- 如需扩容，建议方案：
+  - 按目录分片：不同实例监听不同 `WATCH_DIRS`
+  - 单写多读：仅一个 watcher 负责处理，其它实例仅提供 Web 读取
+  - 外部锁/队列：引入集中式锁或任务队列后再并行处理
 
 ## 扩展点
 

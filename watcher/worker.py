@@ -220,7 +220,20 @@ if not LOG_DIR:
 LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "worker.log").strip()
 LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))
 LOG_MAX_BACKUPS = int(os.getenv("LOG_MAX_BACKUPS", "5"))
+HEALTHCHECK_FILE = os.getenv("HEALTHCHECK_FILE", "/tmp/worker.heartbeat").strip()
+HEALTHCHECK_INTERVAL = int(os.getenv("HEALTHCHECK_INTERVAL", "30"))
+METRICS_ENABLED = os.getenv("METRICS_ENABLED", "false").lower() == "true"
+METRICS_PATH = os.getenv("METRICS_PATH", "/tmp/worker.metrics.json").strip()
 LOG_LOCK = threading.Lock()
+METRICS_LOCK = threading.Lock()
+METRICS_STATE = {
+    "runs_total": 0,
+    "runs_done": 0,
+    "runs_failed": 0,
+    "last_status": None,
+    "last_finished_at": None,
+    "last_duration_ms": None,
+}
 RUN_LOG_CONTEXT = threading.local()
 
 CACHE_DIR = os.path.join(OUT_DIR, "cache")
@@ -801,6 +814,35 @@ def log(level, message, **kwargs):
                     f.write(line + "\n")
         except Exception:  # noqa: BLE001
             pass
+
+
+def update_metrics(status, started_at=None, finished_at=None):
+    if not METRICS_ENABLED or not METRICS_PATH:
+        return
+    if finished_at is None:
+        finished_at = int(time.time())
+    duration_ms = None
+    if started_at is not None:
+        duration_ms = max(0, (finished_at - started_at) * 1000)
+    with METRICS_LOCK:
+        METRICS_STATE["runs_total"] += 1
+        if status == "done":
+            METRICS_STATE["runs_done"] += 1
+        elif status == "failed":
+            METRICS_STATE["runs_failed"] += 1
+        METRICS_STATE["last_status"] = status
+        METRICS_STATE["last_finished_at"] = finished_at
+        METRICS_STATE["last_duration_ms"] = duration_ms
+        payload = dict(METRICS_STATE)
+        payload["updated_at"] = int(time.time())
+    try:
+        directory = os.path.dirname(METRICS_PATH)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(METRICS_PATH, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _rotate_log_if_needed(path):
@@ -4793,6 +4835,7 @@ def process_video(video_path):
 
         with open(done_path, "w", encoding="utf-8") as f:
             f.write("done")
+        finished_at = int(time.time())
         log("DONE", "处理完成", path=video_path, srt=srt_path)
         _write_run_meta(
             run_meta_path,
@@ -4802,10 +4845,11 @@ def process_video(video_path):
                 "status": "done",
                 "stage": stage,
                 "started_at": run_started_at,
-                "finished_at": int(time.time()),
+                "finished_at": finished_at,
                 "log_path": run_log_path,
             },
         )
+        update_metrics("done", started_at=run_started_at, finished_at=finished_at)
         if DELETE_SOURCE_AFTER_DONE and not MOVE_DONE:
             try:
                 os.remove(video_path)
@@ -4847,6 +4891,7 @@ def process_video(video_path):
                 )
             if ASR_FAIL_ALERT:
                 log("ERROR", "ASR 失败强提示", path=video_path, error=str(exc))
+        finished_at = int(time.time())
         _write_run_meta(
             run_meta_path,
             {
@@ -4860,10 +4905,11 @@ def process_video(video_path):
                 "asr_fail_limit": ASR_MAX_FAILURES if stage.startswith("asr_") else None,
                 "asr_fail_cooldown": ASR_FAIL_COOLDOWN_SECONDS if stage.startswith("asr_") else None,
                 "started_at": run_started_at,
-                "finished_at": int(time.time()),
+                "finished_at": finished_at,
                 "log_path": run_log_path,
             },
         )
+        update_metrics("failed", started_at=run_started_at, finished_at=finished_at)
     finally:
         if getattr(RUN_LOG_CONTEXT, "path", "") == run_log_path:
             RUN_LOG_CONTEXT.path = ""
@@ -5059,6 +5105,22 @@ def handle_scan_signal(signum, frame):
     scan_once(GLOBAL_QUEUE, GLOBAL_PENDING, GLOBAL_LOCK, reason="signal")
 
 
+def heartbeat_loop():
+    if not HEALTHCHECK_FILE:
+        return
+    interval = max(HEALTHCHECK_INTERVAL, 5)
+    while True:
+        try:
+            directory = os.path.dirname(HEALTHCHECK_FILE)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            with open(HEALTHCHECK_FILE, "w", encoding="utf-8") as f:
+                f.write(str(int(time.time())))
+        except Exception as exc:
+            log("WARN", "健康检查写入失败", error=str(exc))
+        time.sleep(interval)
+
+
 if __name__ == "__main__":
     ensure_dirs()
 
@@ -5080,6 +5142,7 @@ if __name__ == "__main__":
 
     for _ in range(WORKER_CONCURRENCY):
         threading.Thread(target=worker_loop, args=(q, pending, lock), daemon=True).start()
+    threading.Thread(target=heartbeat_loop, daemon=True).start()
     threading.Thread(target=scan_loop, args=(q, pending, lock), daemon=True).start()
     signal.signal(signal.SIGHUP, handle_scan_signal)
     signal.signal(signal.SIGUSR1, handle_scan_signal)

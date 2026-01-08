@@ -1,7 +1,9 @@
 # Agent Instructions
 
 - 所有沟通使用中文。
-- 目标项目：Docker 化的本地自动字幕工厂，监听 `watch/` 目录，将视频转为音频后上传 OSS，并调用阿里百炼 Paraformer 异步识别生成 SRT。
-- 必须具备：inotify 监听 + 定时扫描补处理、稳定跳过已处理文件、锁文件与过期清理、失败不影响整体服务、结构化日志。
-- 输出与配置：实现 `docker-compose.yml`、`watcher/Dockerfile`、`watcher/worker.py`、`.env.example`、README（包含使用说明与常见问题）。
+- 目标项目：Docker 化的本地自动字幕工厂，支持 Web UI（媒体库/活动/设置/字幕预览编辑）、自动监听与批处理。
+- 核心流程：监听 `watch/` 目录 → 媒体探测与轨道选择 → 字幕复用/跳过策略 → ASR（DashScope Paraformer 离线/实时/自动）→ 智能二次切片 → 上下文逐行翻译 → 产出 SRT。
+- 必须具备：inotify 监听 + 定时扫描补处理、稳定跳过已处理文件、锁文件与过期清理、失败不影响整体服务、结构化日志与单次运行日志、失败冷却/上限保护。
+- 配置与能力：支持 OSS 上传、ASR 模式与模型列表、字幕复用策略与置信度、LLM 翻译参数、元数据与术语表、评估采样与离线评估脚本。
+- 输出与配置：维护 `docker-compose.yml`、`watcher/Dockerfile`、`watcher/worker.py`、`.env.example`、README/文档（包含使用说明与常见问题）。
 - 安全要求：不要把任何密钥或真实凭据写入代码或配置示例中；仅使用占位符。

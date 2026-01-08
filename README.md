@@ -33,6 +33,14 @@
    ```
 4. 把视频放入 `watch/`，字幕会输出到 `output/`
 
+### 最小 E2E 回归（可选）
+
+用于快速验证“落盘文件 → 生成 .done/.srt”的最小链路：
+
+```bash
+./scripts/e2e_minimal.sh
+```
+
 ### 使用 GHCR 镜像
 
 本项目已配置 GitHub Actions 自动构建 GHCR 镜像：`ghcr.io/<owner>/<repo>`。
@@ -63,6 +71,18 @@ docker run -d \
 docker compose pull
 docker compose up -d
 ```
+
+需要固定版本或回滚时，在 `.env` 中设置：
+
+```bash
+WATCHER_IMAGE_TAG=vX.Y.Z
+WEB_IMAGE_TAG=vX.Y.Z
+```
+
+健康检查默认启用：
+
+- watcher：基于 `HEALTHCHECK_FILE` 的心跳时间戳
+- web：HTTP `GET /` 探活
 
 ### Web UI（推荐）
 新 UI 位于 `web/`，提供媒体库、活动、设置、字幕预览/编辑与强制运行选项。
