@@ -59,6 +59,11 @@ export default function ActivityPage() {
     return `${t("activity.progress.running")} ${percent}%`;
   };
 
+  const progressValue = (item: ActivityItem) => {
+    if (item.status !== "running" || typeof item.progress !== "number") return null;
+    return Math.max(0, Math.min(100, Math.round(item.progress)));
+  };
+
   const formatStage = (value?: string) => {
     if (!value) return "";
     if (value.startsWith("asr")) return t("activity.stage.asr");
@@ -102,7 +107,7 @@ export default function ActivityPage() {
   useEffect(() => {
     const handle = window.setInterval(() => {
       fetchActivity();
-    }, 10000);
+    }, 2000);
     return () => window.clearInterval(handle);
   }, [type, status, page, pageSize]);
 
@@ -219,6 +224,14 @@ export default function ActivityPage() {
                       {formatProgress(item) ? <span>{formatProgress(item)}</span> : null}
                       <span>{new Date(item.created_at * 1000).toLocaleString()}</span>
                     </div>
+                    {progressValue(item) !== null ? (
+                      <div className="mt-2 h-2 w-full max-w-xs rounded-full bg-neutral-100">
+                        <div
+                          className="h-2 rounded-full bg-neutral-900 transition-all"
+                          style={{ width: `${progressValue(item)}%` }}
+                        />
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {item.media_id ? (
