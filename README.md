@@ -215,8 +215,8 @@ docker exec <container> sh -c 'touch /watch/.scan_now'
 
 ### DashScope 百炼
 - `DASHSCOPE_API_KEY`：必填
-- `ASR_MODEL`：默认 `paraformer-v2`
-- `ASR_MODE`：`auto|offline|realtime`（默认 `auto`，自动按模型选择；`realtime` 不依赖 OSS）
+- `ASR_MODEL`：默认 `paraformer-8k-v2`（离线）
+- `ASR_MODE`：`auto|offline|realtime`（默认 `offline`）
 - `ASR_REALTIME_MODELS`：实时模型列表（逗号分隔，用于 `auto` 判断）
 - `ASR_OFFLINE_MODELS`：离线模型列表（逗号分隔，用于 `auto` 判断）
 - `SEGMENT_MODE`：`post|auto`（默认 `post`）
