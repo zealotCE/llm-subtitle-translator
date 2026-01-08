@@ -21,6 +21,8 @@ type ActivityItem = {
   created_at: number;
   progress?: number | null;
   stage?: string;
+  asr_model?: string;
+  llm_model?: string;
 };
 
 export default function ActivityPage() {
