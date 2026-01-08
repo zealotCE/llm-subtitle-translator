@@ -16,6 +16,11 @@
 - `watcher/`：处理服务代码
 - `docs/FAQ.md`：常见问题
 
+## 文档导航
+- `docs/PIPELINE.md`：完整处理流程与逻辑细节
+- `docs/ARCHITECTURE.md`：架构总览与关键设计决策
+- `docs/FAQ.md`：常见问题与排障建议
+
 ## 快速开始
 1. 复制配置文件：
    ```bash
