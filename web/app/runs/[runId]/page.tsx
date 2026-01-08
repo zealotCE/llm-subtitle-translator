@@ -13,6 +13,9 @@ type RunItem = {
   media_title?: string;
   media_path?: string;
   stage?: string;
+  progress?: number | null;
+  asr_model?: string;
+  llm_model?: string;
   outputs?: {
     raw?: { id: string; path: string };
     zh?: { id: string; path: string };
@@ -84,6 +87,17 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
     };
     return mapping[key] || key;
   };
+  const formatProgress = (item: RunItem) => {
+    if (typeof item.progress !== "number") return "";
+    const percent = Math.max(0, Math.min(100, Math.round(item.progress)));
+    if (item.stage?.startsWith("asr")) return `${t("activity.progress.asr")} ${percent}%`;
+    if (item.stage?.startsWith("translate")) return `${t("activity.progress.translate")} ${percent}%`;
+    return `${t("activity.progress.running")} ${percent}%`;
+  };
+  const progressValue = (item: RunItem) => {
+    if (typeof item.progress !== "number") return null;
+    return Math.max(0, Math.min(100, Math.round(item.progress)));
+  };
 
   const fetchRun = async () => {
     const res = await fetch(`/api/v3/runs/${params.runId}`);
@@ -136,6 +150,13 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
     fetchRun();
     fetchLog();
   }, [params.runId]);
+  useEffect(() => {
+    if (!run || run.status !== "running") return;
+    const handle = window.setInterval(() => {
+      fetchRun();
+    }, 3000);
+    return () => window.clearInterval(handle);
+  }, [run?.status, params.runId]);
 
   return (
     <main className="min-h-screen px-6 py-10">
@@ -168,6 +189,29 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
             <div>
               {t("run.field.status")}: {run.status}
             </div>
+            {run.asr_model ? (
+              <div>
+                {t("activity.model.asr")}: {run.asr_model}
+              </div>
+            ) : null}
+            {run.llm_model ? (
+              <div>
+                {t("activity.model.llm")}: {run.llm_model}
+              </div>
+            ) : null}
+            {formatProgress(run) ? (
+              <div>
+                {formatProgress(run)}
+                {progressValue(run) !== null ? (
+                  <div className="mt-2 h-2 w-full max-w-xs rounded-full bg-neutral-100">
+                    <div
+                      className="h-2 rounded-full bg-neutral-900 transition-all"
+                      style={{ width: `${progressValue(run)}%` }}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div>
               {t("run.field.started")}: {new Date(run.started_at * 1000).toLocaleString()}
             </div>

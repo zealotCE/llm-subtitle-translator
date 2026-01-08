@@ -2,6 +2,7 @@ import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
 import path from "path";
 import fs from "fs/promises";
+import { loadRunMeta } from "@/lib/server/media";
 import { loadState } from "@/lib/server/v3/store";
 
 export const runtime = "nodejs";
@@ -18,8 +19,21 @@ export async function GET(request: Request, context: { params: { runId: string }
     return Response.json({ ok: false, message: "未找到运行记录" }, { status: 404 });
   }
   const media = state.media[run.media_id];
+  let runMeta: Record<string, unknown> | null = null;
+  if (media) {
+    runMeta = await loadRunMeta(env, media.path);
+  }
   const enriched = media
-    ? { ...run, media_title: media.title, media_path: media.path, outputs: media.outputs }
+    ? {
+        ...run,
+        media_title: media.title,
+        media_path: media.path,
+        outputs: media.outputs,
+        progress: typeof runMeta?.progress === "number" ? runMeta.progress : null,
+        stage: typeof runMeta?.stage === "string" ? runMeta.stage : run.stage,
+        asr_model: typeof runMeta?.asr_model === "string" ? runMeta.asr_model : undefined,
+        llm_model: typeof runMeta?.llm_model === "string" ? runMeta.llm_model : undefined,
+      }
     : run;
   const pipeline = {
     asr_mode: env.ASR_MODE || "",
