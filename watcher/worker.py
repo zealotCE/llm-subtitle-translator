@@ -847,6 +847,22 @@ def publish_event(payload):
         pass
 
 
+def _log_progress(stage, video_path, percent, total=None, done=None):
+    try:
+        percent = int(percent)
+    except Exception:  # noqa: BLE001
+        return
+    log(
+        "INFO",
+        "进度更新",
+        path=video_path,
+        stage=stage,
+        progress=percent,
+        total=total,
+        done=done,
+    )
+
+
 def update_metrics(status, started_at=None, finished_at=None):
     if not METRICS_ENABLED or not METRICS_PATH:
         return
@@ -4610,6 +4626,15 @@ def process_video(video_path):
         _update_run_meta(run_meta_path, {"stage": stage, "progress": 20})
         if subs is None:
             if asr_mode == "realtime":
+                asr_progress_logged = set()
+                def _asr_progress(done, total):
+                    stage_percent = int(100 * done / max(total, 1))
+                    percent = int(20 + 30 * done / max(total, 1))
+                    _update_run_meta(run_meta_path, {"stage": "asr_call", "progress": percent})
+                    for mark in (25, 50, 75, 100):
+                        if stage_percent >= mark and mark not in asr_progress_logged:
+                            asr_progress_logged.add(mark)
+                            _log_progress("asr_call", video_path, mark, total=total, done=done)
                 if hotwords and ASR_HOTWORDS_MODE == "param":
                     log("WARN", "实时 ASR 不支持 param 热词，已忽略", path=video_path)
                 merged_subs, responses, failures, total, chunk_seconds = run_realtime_chunks(
@@ -4617,10 +4642,7 @@ def process_video(video_path):
                     tmp_wav,
                     vocab_id,
                     segment_mode=segment_mode,
-                    progress_cb=lambda done, total: _update_run_meta(
-                        run_meta_path,
-                        {"stage": "asr_call", "progress": int(20 + 30 * done / max(total, 1))},
-                    ),
+                    progress_cb=_asr_progress,
                 )
                 if (
                     ASR_REALTIME_ADAPTIVE_RETRY
@@ -4651,10 +4673,7 @@ def process_video(video_path):
                             tmp_wav,
                             vocab_id,
                             segment_mode=segment_mode,
-                            progress_cb=lambda done, total: _update_run_meta(
-                                run_meta_path,
-                                {"stage": "asr_call", "progress": int(20 + 30 * done / max(total, 1))},
-                            ),
+                            progress_cb=_asr_progress,
                         )
                     finally:
                         globals()["ASR_REALTIME_CHUNK_SECONDS"] = orig_seconds
@@ -4678,10 +4697,7 @@ def process_video(video_path):
                         semantic_punctuation_enabled=False,
                         max_sentence_silence=ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE,
                         multi_threshold_mode_enabled=ASR_REALTIME_FALLBACK_MULTI_THRESHOLD,
-                        progress_cb=lambda done, total: _update_run_meta(
-                            run_meta_path,
-                            {"stage": "asr_call", "progress": int(20 + 30 * done / max(total, 1))},
-                        ),
+                        progress_cb=_asr_progress,
                     )
                 if SAVE_RAW_JSON:
                     with open(raw_path, "w", encoding="utf-8") as f:
@@ -4696,6 +4712,7 @@ def process_video(video_path):
                 upload_to_oss(bucket, tmp_wav, object_key)
                 url = oss_url(bucket, object_key)
 
+                log("INFO", "离线 ASR 请求中", path=video_path, model=ASR_MODEL)
                 response = dashscope_transcribe(
                     url,
                     hotwords=hotwords if hotwords else None,
@@ -4875,6 +4892,15 @@ def process_video(video_path):
                         if work_glossary:
                             merged_glossary.update(work_glossary)
                         try:
+                            translate_progress_logged = set()
+                            def _translate_progress(done, total):
+                                stage_percent = int(100 * done / max(total, 1))
+                                percent = int(50 + 50 * done / max(total, 1))
+                                _update_run_meta(run_meta_path, {"stage": "translate", "progress": percent})
+                                for mark in (25, 50, 75, 100):
+                                    if stage_percent >= mark and mark not in translate_progress_logged:
+                                        translate_progress_logged.add(mark)
+                                        _log_progress("translate", video_path, mark, total=total, done=done)
                             trans_subs = build_translated_subs(
                                 subs,
                                 cache,
@@ -4886,10 +4912,7 @@ def process_video(video_path):
                                 work_metadata=metadata,
                                 use_polish=USE_POLISH,
                                 llm_client=llm_client,
-                                progress_cb=lambda done, total: _update_run_meta(
-                                    run_meta_path,
-                                    {"stage": "translate", "progress": int(50 + 50 * done / max(total, 1))},
-                                ),
+                                progress_cb=_translate_progress,
                             )
                             if SRT_VALIDATE:
                                 fixed, issues = validate_and_fix_subs(trans_subs)
