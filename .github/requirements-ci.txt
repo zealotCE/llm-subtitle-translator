@@ -1,0 +1,7 @@
+pytest
+pytest-cov
+dashscope
+oss2
+srt
+requests
+pyyaml
