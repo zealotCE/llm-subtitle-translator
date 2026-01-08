@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AuthGuard } from "@/components/auth-guard";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -28,6 +28,12 @@ export default function ActivityPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [pageSize, setPageSize] = useState(50);
+  const [counts, setCounts] = useState<{
+    total: number;
+    type: Record<string, number>;
+    status: Record<string, number>;
+    processing: number;
+  }>({ total: 0, type: {}, status: {}, processing: 0 });
   const { t } = useI18n();
 
   const formatMessage = (item: ActivityItem) => {
@@ -54,6 +60,7 @@ export default function ActivityPage() {
     if (data.ok) {
       setItems(data.items || []);
       setTotal(data.total || 0);
+      setCounts(data.counts || { total: 0, type: {}, status: {}, processing: 0 });
     }
   };
 
@@ -80,11 +87,67 @@ export default function ActivityPage() {
     return () => window.clearInterval(handle);
   }, [type, status, page, pageSize]);
 
+  const typeCards = useMemo(
+    () => [
+      { key: "", label: t("activity.filterAll"), count: counts.total },
+      { key: "media_added", label: t("activity.type.media_added"), count: counts.type.media_added || 0 },
+      { key: "status_change", label: t("activity.type.status_change"), count: counts.type.status_change || 0 },
+      { key: "retry", label: t("activity.type.retry"), count: counts.type.retry || 0 },
+      { key: "translate", label: t("activity.type.translate"), count: counts.type.translate || 0 },
+      { key: "force", label: t("activity.type.force"), count: counts.type.force || 0 },
+      { key: "stage_asr_done", label: t("activity.type.stage_asr"), count: counts.type.stage_asr_done || 0 },
+      {
+        key: "stage_translate_done",
+        label: t("activity.type.stage_translate"),
+        count: counts.type.stage_translate_done || 0,
+      },
+    ],
+    [counts, t]
+  );
+
+  const statusChips = useMemo(
+    () => [
+      { key: "", label: t("activity.filterAll"), count: counts.total },
+      { key: "processing", label: t("activity.filter.processing"), count: counts.processing || 0 },
+      { key: "failed", label: t("status.failed"), count: counts.status.failed || 0 },
+      { key: "done", label: t("status.done"), count: counts.status.done || 0 },
+      { key: "info", label: t("status.info"), count: counts.status.info || 0 },
+    ],
+    [counts, t]
+  );
+
   return (
     <main className="min-h-screen px-6 py-10">
       <AuthGuard />
       <section className="mx-auto max-w-5xl space-y-6">
         <h1 className="section-title">{t("activity.title")}</h1>
+        <div className="grid gap-3 md:grid-cols-4">
+          {typeCards.map((card) => (
+            <button
+              key={card.key || "all"}
+              type="button"
+              onClick={() => setType(card.key)}
+              className={`rounded-2xl border px-4 py-3 text-left transition ${
+                type === card.key ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-200 bg-white/70"
+              }`}
+            >
+              <div className="text-xs uppercase tracking-[0.2em] opacity-70">{card.label}</div>
+              <div className="mt-2 text-2xl font-semibold">{card.count}</div>
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {statusChips.map((chip) => (
+            <Button
+              key={chip.key || "all"}
+              variant={status === chip.key ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatus(chip.key)}
+            >
+              {chip.label} · {chip.count}
+            </Button>
+          ))}
+        </div>
         <div className="grid gap-3 md:grid-cols-3">
           <Select value={type} onChange={(event) => setType(event.target.value)}>
             <option value="">{t("activity.filterAll")}</option>
@@ -98,8 +161,7 @@ export default function ActivityPage() {
           </Select>
           <Select value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="">{t("activity.filterAll")}</option>
-            <option value="pending">{t("status.pending")}</option>
-            <option value="running">{t("status.running")}</option>
+            <option value="processing">{t("activity.filter.processing")}</option>
             <option value="failed">{t("status.failed")}</option>
             <option value="done">{t("status.done")}</option>
             <option value="info">{t("status.info")}</option>

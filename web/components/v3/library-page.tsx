@@ -121,7 +121,8 @@ export default function LibraryPage() {
     }
     const incoming = (data.items || []) as MediaItem[];
     setItems((prev) => {
-      if (Date.now() < suspendOrderUntilRef.current && prev.length) {
+      const allowMerge = !query && selectedFilters.length === 0;
+      if (allowMerge && Date.now() < suspendOrderUntilRef.current && prev.length) {
         const map = new Map(incoming.map((item: MediaItem) => [item.id, item]));
         const merged: MediaItem[] = prev.map((item) => map.get(item.id) || item);
         const seen = new Set(merged.map((item) => item.id));
@@ -159,6 +160,22 @@ export default function LibraryPage() {
   const toggleFilter = (key: string) => {
     setSelectedFilters((prev) => (prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]));
     setPage(1);
+  };
+
+  const toggleSort = (field: "title" | "status") => {
+    setSort((prev) => {
+      const asc = `${field}_asc`;
+      const desc = `${field}_desc`;
+      if (prev === asc) return desc;
+      if (prev === desc) return asc;
+      return desc;
+    });
+  };
+
+  const sortMark = (field: "title" | "status") => {
+    if (sort === `${field}_asc`) return "↑";
+    if (sort === `${field}_desc`) return "↓";
+    return "";
   };
 
   const toggleSelectAll = () => {
@@ -342,8 +359,26 @@ export default function LibraryPage() {
                   onClick={(event) => event.stopPropagation()}
                 />
               </TableHead>
-              <TableHead>{t("library.table.title")}</TableHead>
-              <TableHead>{t("library.table.status")}</TableHead>
+              <TableHead>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2"
+                  onClick={() => toggleSort("title")}
+                >
+                  {t("library.table.title")}
+                  <span className="text-xs text-neutral-400">{sortMark("title")}</span>
+                </button>
+              </TableHead>
+              <TableHead>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2"
+                  onClick={() => toggleSort("status")}
+                >
+                  {t("library.table.status")}
+                  <span className="text-xs text-neutral-400">{sortMark("status")}</span>
+                </button>
+              </TableHead>
               <TableHead>{t("library.table.subtitles")}</TableHead>
               <TableHead>{t("library.table.actions")}</TableHead>
             </TableRow>

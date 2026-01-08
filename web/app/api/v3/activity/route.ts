@@ -17,6 +17,18 @@ export async function GET(request: Request) {
   const pageSize = Number(url.searchParams.get("page_size") || "50");
   const state = await loadState();
   const data = listActivity(state, { type, status, page, pageSize });
+  const typeCounts: Record<string, number> = {};
+  const statusCounts: Record<string, number> = {};
+  const allItems = state.activity;
+  const typeFiltered = type ? allItems.filter((item) => item.type === type) : allItems;
+  for (const item of allItems) {
+    typeCounts[item.type] = (typeCounts[item.type] || 0) + 1;
+  }
+  for (const item of typeFiltered) {
+    statusCounts[item.status] = (statusCounts[item.status] || 0) + 1;
+  }
+  const total = allItems.length;
+  const processingCount = (statusCounts.pending || 0) + (statusCounts.running || 0);
   const items = data.items.map((item) => {
     if (!item.media_id) {
       return item;
@@ -31,5 +43,15 @@ export async function GET(request: Request) {
       media_path: media.path,
     };
   });
-  return Response.json({ ok: true, ...data, items });
+  return Response.json({
+    ok: true,
+    ...data,
+    items,
+    counts: {
+      total,
+      type: typeCounts,
+      status: statusCounts,
+      processing: processingCount,
+    },
+  });
 }

@@ -184,13 +184,14 @@ export function listMedia(
   if (filters.length) {
     const filterSet = new Set(filters);
     items = items.filter((item) => {
-      if (filterSet.has("missing_zh") && item.outputs.zh) return false;
-      if (filterSet.has("archived") && !item.archived) return false;
-      if (filterSet.has("failed") && item.status !== "failed") return false;
-      if (filterSet.has("running") && item.status !== "running") return false;
-      if (filterSet.has("pending") && item.status !== "pending") return false;
-      if (filterSet.has("done") && item.status !== "done") return false;
-      return true;
+      const matches = [];
+      if (filterSet.has("missing_zh")) matches.push(!item.outputs.zh);
+      if (filterSet.has("archived")) matches.push(item.archived || item.status === "archived");
+      if (filterSet.has("failed")) matches.push(item.status === "failed");
+      if (filterSet.has("running")) matches.push(item.status === "running" || item.status === "pending");
+      if (filterSet.has("pending")) matches.push(item.status === "pending");
+      if (filterSet.has("done")) matches.push(item.status === "done");
+      return matches.length ? matches.some(Boolean) : true;
     });
   }
   items = sortMedia(items, options.sort);
@@ -241,7 +242,11 @@ export function listActivity(
     items = items.filter((item) => item.type === type);
   }
   if (status) {
-    items = items.filter((item) => item.status === status);
+    if (status === "processing") {
+      items = items.filter((item) => item.status === "pending" || item.status === "running");
+    } else {
+      items = items.filter((item) => item.status === status);
+    }
   }
   const total = items.length;
   const pageSize = Math.max(1, Math.min(options.pageSize || 50, 200));
@@ -329,6 +334,29 @@ function sortMedia(items: MediaItem[], sort?: string) {
   const key = sort || "updated_desc";
   if (key === "created_desc") {
     return items.sort((a, b) => b.created_at - a.created_at);
+  }
+  if (key === "updated_asc") {
+    return items.sort((a, b) => a.updated_at - b.updated_at);
+  }
+  if (key === "title_asc") {
+    return items.sort((a, b) => a.title.localeCompare(b.title));
+  }
+  if (key === "title_desc") {
+    return items.sort((a, b) => b.title.localeCompare(a.title));
+  }
+  if (key === "status_asc" || key === "status_desc") {
+    const order = ["failed", "running", "pending", "done", "archived", "info"];
+    const weight = (value: string) => {
+      const idx = order.indexOf(value);
+      return idx === -1 ? order.length : idx;
+    };
+    return items.sort((a, b) => {
+      const diff = weight(a.status) - weight(b.status);
+      if (diff !== 0) {
+        return key === "status_asc" ? diff : -diff;
+      }
+      return b.updated_at - a.updated_at;
+    });
   }
   if (key === "failed_first") {
     return items.sort((a, b) => {
