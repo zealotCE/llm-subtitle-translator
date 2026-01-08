@@ -836,6 +836,10 @@ def output_paths(name, out_dir):
     return srt_path, done_path, lock_path, raw_path
 
 
+def asr_failed_path(name, out_dir):
+    return os.path.join(out_dir, f"{name}.asr_failed")
+
+
 def _run_log_token(video_path):
     return hashlib.sha1(video_path.encode("utf-8")).hexdigest()[:8]
 
@@ -3210,7 +3214,11 @@ def dashscope_realtime_transcribe(
     recognition = Recognition(**kwargs)
 
     def _call():
-        return recognition.call(path)
+        response = recognition.call(path)
+        error = extract_dashscope_error(response)
+        if error:
+            raise RuntimeError(error)
+        return response
 
     return retry(_call)
 
@@ -3304,6 +3312,10 @@ def dashscope_realtime_streaming_transcribe(
     recognition.stop()
     callback.completed.wait(timeout=60)
     with callback.lock:
+        errors = list(callback.errors)
+    if errors:
+        raise RuntimeError(f"实时流式识别失败: {errors[0]}")
+    with callback.lock:
         sentences = list(callback.sentences)
     if not sentences:
         raise RuntimeError("实时流式识别返回为空")
@@ -3324,6 +3336,25 @@ def to_dict(obj):
             data["output"] = getattr(obj, "output")
         return data
     return {"value": str(obj)}
+
+
+def extract_dashscope_error(response):
+    data = to_dict(response)
+    candidates = []
+    if isinstance(data, dict):
+        candidates.append(data)
+        output = data.get("output")
+        if isinstance(output, dict):
+            candidates.append(output)
+    for item in candidates:
+        code = item.get("code") or item.get("status_code")
+        message = item.get("message") or item.get("msg") or item.get("error")
+        if code is None and message is None:
+            continue
+        if code in (0, 200, "0", "200"):
+            continue
+        return f"DashScope 返回错误: {code} {message}".strip()
+    return ""
 
 
 def to_seconds(value, scale):
@@ -3447,7 +3478,12 @@ def build_srt(response, segment_mode="post"):
         result = output[0]
 
     if not isinstance(result, dict):
-        raise RuntimeError("DashScope 返回结构无法解析")
+        snippet = ""
+        try:
+            snippet = json.dumps(resp_dict, ensure_ascii=False)[:500]
+        except Exception:  # noqa: BLE001
+            snippet = str(resp_dict)[:500]
+        raise RuntimeError(f"DashScope 返回结构无法解析: {snippet}")
 
     transcripts = result.get("transcripts")
     if isinstance(transcripts, list) and transcripts:
@@ -4021,14 +4057,15 @@ def translate_failed_path(name, dst_lang, multiple, out_dir):
     return os.path.join(out_dir, f"{name}.translate_failed.log")
 
 
-def should_skip(video_path):
+def should_skip(video_path, force_once=False):
     name = base_name(video_path)
     out_dir = output_dir_for(video_path)
     srt_path, done_path, lock_path, _ = output_paths(name, out_dir)
+    fail_path = asr_failed_path(name, out_dir)
 
-    if os.path.exists(done_path):
+    if not force_once and os.path.exists(done_path):
         return True, "done_exists"
-    if os.path.exists(srt_path) and not OUTPUT_TO_SOURCE_DIR:
+    if not force_once and os.path.exists(srt_path) and not OUTPUT_TO_SOURCE_DIR:
         return True, "srt_exists"
     if os.path.exists(lock_path):
         if is_lock_stale(lock_path):
@@ -4036,6 +4073,16 @@ def should_skip(video_path):
             remove_lock(lock_path)
             return False, "lock_stale_removed"
         return True, "lock_exists"
+    if not force_once and os.path.exists(fail_path):
+        if ASR_FAIL_COOLDOWN_SECONDS <= 0:
+            return True, "asr_failed"
+        age = time.time() - os.path.getmtime(fail_path)
+        if age < ASR_FAIL_COOLDOWN_SECONDS:
+            return True, "asr_failed_recent"
+        try:
+            os.remove(fail_path)
+        except OSError:
+            pass
     return False, ""
 
 
@@ -4065,13 +4112,13 @@ def process_video(video_path):
     eval_reference_text = ""
     eval_skip_main_srt = False
 
-    skip, reason = should_skip(video_path)
-    if skip:
-        log("SKIP", "已处理或正在处理", path=video_path, reason=reason)
-        return
-
     if not is_stable_file(video_path):
         log("SKIP", "文件未下载完成", path=video_path)
+        return
+
+    skip, reason = should_skip(video_path, force_once=force_once)
+    if skip:
+        log("SKIP", "已处理或正在处理", path=video_path, reason=reason)
         return
 
     if not create_lock(lock_path):
@@ -4658,6 +4705,13 @@ def process_video(video_path):
             target = os.path.join(DONE_DIR, os.path.basename(video_path))
             shutil.move(video_path, target)
 
+        fail_path = asr_failed_path(name, out_dir)
+        if os.path.exists(fail_path):
+            try:
+                os.remove(fail_path)
+            except OSError:
+                pass
+
         with open(done_path, "w", encoding="utf-8") as f:
             f.write("done")
         log("DONE", "处理完成", path=video_path, srt=srt_path)
@@ -4681,6 +4735,23 @@ def process_video(video_path):
                 log("WARN", "删除源视频失败", path=video_path, error=str(exc))
     except Exception as exc:  # noqa: BLE001
         log("ERROR", "处理失败", path=video_path, error=str(exc), stage=stage)
+        if stage.startswith("asr_"):
+            fail_path = asr_failed_path(name, out_dir)
+            try:
+                with open(fail_path, "w", encoding="utf-8") as f:
+                    json.dump(
+                        {
+                            "ts": int(time.time()),
+                            "stage": stage,
+                            "error": str(exc),
+                        },
+                        f,
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                log("WARN", "标记 ASR 失败冷却", path=video_path, marker=fail_path)
+            except Exception:  # noqa: BLE001
+                pass
         _write_run_meta(
             run_meta_path,
             {
@@ -4932,3 +5003,4 @@ if __name__ == "__main__":
         queue_priority_default=QUEUE_PRIORITY_DEFAULT,
     )
     inotify_loop(q, pending, lock)
+ASR_FAIL_COOLDOWN_SECONDS = int(os.getenv("ASR_FAIL_COOLDOWN_SECONDS", "3600") or "0")
