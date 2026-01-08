@@ -352,6 +352,7 @@ export default function MediaDetailPage({ params }: { params: { id: string } }) 
               </Button>
             )}
           </div>
+          <p className="mt-2 text-xs text-neutral-500">{t("media.force.help")}</p>
         </div>
 
         <div className="flex flex-wrap gap-2">

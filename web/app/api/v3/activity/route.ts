@@ -1,6 +1,7 @@
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
 import { listActivity, loadState } from "@/lib/server/v3/store";
+import { loadRunMeta } from "@/lib/server/media";
 
 export const runtime = "nodejs";
 
@@ -29,20 +30,25 @@ export async function GET(request: Request) {
   }
   const total = allItems.length;
   const processingCount = (statusCounts.pending || 0) + (statusCounts.running || 0);
-  const items = data.items.map((item) => {
-    if (!item.media_id) {
-      return item;
-    }
-    const media = state.media[item.media_id];
-    if (!media) {
-      return item;
-    }
-    return {
-      ...item,
-      media_title: media.title,
-      media_path: media.path,
-    };
-  });
+  const items = await Promise.all(
+    data.items.map(async (item) => {
+      if (!item.media_id) {
+        return item;
+      }
+      const media = state.media[item.media_id];
+      if (!media) {
+        return item;
+      }
+      const runMeta = item.status === "running" ? await loadRunMeta(env, media.path) : null;
+      return {
+        ...item,
+        media_title: media.title,
+        media_path: media.path,
+        progress: typeof runMeta?.progress === "number" ? runMeta.progress : null,
+        stage: typeof runMeta?.stage === "string" ? runMeta.stage : "",
+      };
+    })
+  );
   return Response.json({
     ok: true,
     ...data,

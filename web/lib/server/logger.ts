@@ -16,6 +16,7 @@ export async function logEvent(
     ts: new Date().toISOString(),
     level,
     message,
+    source: "web",
     ...(data || {}),
   };
   try {

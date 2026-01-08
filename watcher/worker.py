@@ -968,6 +968,20 @@ def _write_run_meta(path, data):
         pass
 
 
+def _update_run_meta(path, updates):
+    try:
+        existing = {}
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                existing = json.load(f) or {}
+        merged = {**existing, **updates}
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(merged, f, ensure_ascii=False, indent=2)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def should_collect_eval(video_path):
     if not EVAL_COLLECT:
         return False
@@ -1274,6 +1288,7 @@ def run_realtime_chunks(
     semantic_punctuation_enabled=None,
     max_sentence_silence=None,
     multi_threshold_mode_enabled=None,
+    progress_cb=None,
 ):
     duration = wav_duration_seconds(tmp_wav)
     chunk_seconds = choose_realtime_chunk_seconds(duration)
@@ -1294,7 +1309,12 @@ def run_realtime_chunks(
     responses = []
     chunk_subs = []
     failures = 0
-    for chunk_path, offset_ms in chunks:
+    for idx, (chunk_path, offset_ms) in enumerate(chunks):
+        if progress_cb:
+            try:
+                progress_cb(idx + 1, len(chunks))
+            except Exception:  # noqa: BLE001
+                pass
         try:
             def _call():
                 if ASR_REALTIME_STREAMING_ENABLED:
@@ -3758,6 +3778,7 @@ def translate_via_llm(
     work_metadata=None,
     use_polish=False,
     llm_client=None,
+    progress_cb=None,
 ):
     if llm_client is None:
         if not LLM_BASE_URL or not LLM_API_KEY:
@@ -3910,6 +3931,8 @@ def translate_via_llm(
     def translate_fallback_line(line):
         return normalize_lines(call_llm([line]))[0]
 
+    completed = 0
+    total_batches = max(1, len(batches))
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_TRANSLATIONS) as executor:
         future_map = {
             executor.submit(translate_batch, batch, batch_keys): (batch, batch_keys)
@@ -3923,6 +3946,12 @@ def translate_via_llm(
                     cleaned = clean_line_prefix(line)
                     cache.set(key, cleaned)
                     results[idx] = cleaned
+                completed += 1
+                if progress_cb:
+                    try:
+                        progress_cb(completed, total_batches)
+                    except Exception:  # noqa: BLE001
+                        pass
                 continue
 
             with open(failed_log, "a", encoding="utf-8") as f:
@@ -3942,6 +3971,12 @@ def translate_via_llm(
                         f.write(line)
                         f.write(f"\nERROR: {exc}\n\n")
                     results[idx] = line
+            completed += 1
+            if progress_cb:
+                try:
+                    progress_cb(completed, total_batches)
+                except Exception:  # noqa: BLE001
+                    pass
 
     if use_polish:
         original_lines = [get_text(item) for item in items]
@@ -4021,6 +4056,7 @@ def build_translated_subs(
     work_metadata=None,
     use_polish=False,
     llm_client=None,
+    progress_cb=None,
 ):
     lines = []
     for sub in subs:
@@ -4088,6 +4124,7 @@ def build_translated_subs(
         work_metadata=work_metadata,
         use_polish=use_polish,
         llm_client=llm_client,
+        progress_cb=progress_cb,
     )
     new_subs = []
     for sub, text in zip(subs, translated):
@@ -4256,6 +4293,7 @@ def process_video(video_path):
                 "path": video_path,
                 "status": "running",
                 "stage": stage,
+                "progress": 1,
                 "started_at": run_started_at,
                 "log_path": run_log_path,
             },
@@ -4278,6 +4316,7 @@ def process_video(video_path):
             run_id=run_id,
         )
         stage = "probe"
+        _update_run_meta(run_meta_path, {"stage": stage, "progress": 5})
 
         media_info = probe_media(video_path)
         audio_cfg = AudioSelectionConfig(
@@ -4353,6 +4392,7 @@ def process_video(video_path):
         traditional_subs = []
         other_subs = []
         stage = "subtitle_select"
+        _update_run_meta(run_meta_path, {"stage": stage, "progress": 10})
         if subtitle_cfg.mode != "ignore":
             if selected_subtitle:
                 info = {
@@ -4476,6 +4516,7 @@ def process_video(video_path):
                 srt_text = None
 
         stage = "asr_prepare"
+        _update_run_meta(run_meta_path, {"stage": stage, "progress": 15})
         if subs is None:
             if other_subs and not use_existing_subtitle:
                 log("INFO", "忽略现有字幕，继续语音识别", path=video_path)
@@ -4512,12 +4553,20 @@ def process_video(video_path):
                 )
 
         stage = "asr_call"
+        _update_run_meta(run_meta_path, {"stage": stage, "progress": 20})
         if subs is None:
             if asr_mode == "realtime":
                 if hotwords and ASR_HOTWORDS_MODE == "param":
                     log("WARN", "实时 ASR 不支持 param 热词，已忽略", path=video_path)
                 merged_subs, responses, failures, total, chunk_seconds = run_realtime_chunks(
-                    video_path, tmp_wav, vocab_id, segment_mode=segment_mode
+                    video_path,
+                    tmp_wav,
+                    vocab_id,
+                    segment_mode=segment_mode,
+                    progress_cb=lambda done, total: _update_run_meta(
+                        run_meta_path,
+                        {"stage": "asr_call", "progress": int(20 + 30 * done / max(total, 1))},
+                    ),
                 )
                 if (
                     ASR_REALTIME_ADAPTIVE_RETRY
@@ -4544,7 +4593,14 @@ def process_video(video_path):
                     try:
                         globals()["ASR_REALTIME_CHUNK_SECONDS"] = fallback_seconds
                         merged_subs, responses, failures, total, _ = run_realtime_chunks(
-                            video_path, tmp_wav, vocab_id, segment_mode=segment_mode
+                            video_path,
+                            tmp_wav,
+                            vocab_id,
+                            segment_mode=segment_mode,
+                            progress_cb=lambda done, total: _update_run_meta(
+                                run_meta_path,
+                                {"stage": "asr_call", "progress": int(20 + 30 * done / max(total, 1))},
+                            ),
                         )
                     finally:
                         globals()["ASR_REALTIME_CHUNK_SECONDS"] = orig_seconds
@@ -4568,6 +4624,10 @@ def process_video(video_path):
                         semantic_punctuation_enabled=False,
                         max_sentence_silence=ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE,
                         multi_threshold_mode_enabled=ASR_REALTIME_FALLBACK_MULTI_THRESHOLD,
+                        progress_cb=lambda done, total: _update_run_meta(
+                            run_meta_path,
+                            {"stage": "asr_call", "progress": int(20 + 30 * done / max(total, 1))},
+                        ),
                     )
                 if SAVE_RAW_JSON:
                     with open(raw_path, "w", encoding="utf-8") as f:
@@ -4595,6 +4655,7 @@ def process_video(video_path):
 
             if subs is None or srt_text is None:
                 raise RuntimeError("ASR 结果为空")
+            _update_run_meta(run_meta_path, {"stage": "asr_done", "progress": 50})
             if SRT_VALIDATE:
                 fixed, issues = validate_and_fix_subs(subs)
                 if issues and SRT_AUTO_FIX:
@@ -4609,6 +4670,7 @@ def process_video(video_path):
                 log("INFO", "识别完成并保存字幕", path=video_path, output=srt_path)
 
         stage = "translate"
+        _update_run_meta(run_meta_path, {"stage": stage, "progress": 55})
         translate_enabled = TRANSLATE or force_translate
         if translate_enabled:
             try:
@@ -4770,6 +4832,10 @@ def process_video(video_path):
                                 work_metadata=metadata,
                                 use_polish=USE_POLISH,
                                 llm_client=llm_client,
+                                progress_cb=lambda done, total: _update_run_meta(
+                                    run_meta_path,
+                                    {"stage": "translate", "progress": int(50 + 50 * done / max(total, 1))},
+                                ),
                             )
                             if SRT_VALIDATE:
                                 fixed, issues = validate_and_fix_subs(trans_subs)
@@ -4844,6 +4910,7 @@ def process_video(video_path):
                 "path": video_path,
                 "status": "done",
                 "stage": stage,
+                "progress": 100,
                 "started_at": run_started_at,
                 "finished_at": finished_at,
                 "log_path": run_log_path,
@@ -4907,6 +4974,7 @@ def process_video(video_path):
                 "started_at": run_started_at,
                 "finished_at": finished_at,
                 "log_path": run_log_path,
+                "progress": None,
             },
         )
         update_metrics("failed", started_at=run_started_at, finished_at=finished_at)

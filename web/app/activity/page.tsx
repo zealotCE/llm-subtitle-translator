@@ -19,6 +19,8 @@ type ActivityItem = {
   status: string;
   message: string;
   created_at: number;
+  progress?: number | null;
+  stage?: string;
 };
 
 export default function ActivityPage() {
@@ -47,6 +49,14 @@ export default function ActivityPage() {
       return `${t("activity.msg.status_change")}: ${t(`status.${item.status}`) || item.status}`;
     }
     return item.message;
+  };
+
+  const formatProgress = (item: ActivityItem) => {
+    if (item.status !== "running" || typeof item.progress !== "number") return "";
+    const percent = Math.max(0, Math.min(100, Math.round(item.progress)));
+    if (item.stage?.startsWith("asr")) return `${t("activity.progress.asr")} ${percent}%`;
+    if (item.stage?.startsWith("translate")) return `${t("activity.progress.translate")} ${percent}%`;
+    return `${t("activity.progress.running")} ${percent}%`;
   };
 
   const fetchActivity = async () => {
@@ -192,6 +202,7 @@ export default function ActivityPage() {
                       <span>
                         {t("activity.status")}: {t(`status.${item.status}`) || item.status}
                       </span>
+                      {formatProgress(item) ? <span>{formatProgress(item)}</span> : null}
                       <span>{new Date(item.created_at * 1000).toLocaleString()}</span>
                     </div>
                   </div>
