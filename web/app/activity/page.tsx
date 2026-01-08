@@ -48,6 +48,7 @@ export default function ActivityPage() {
     if (item.type === "stage_asr_done") return t("activity.msg.stage_asr");
     if (item.type === "stage_translate_done") return t("activity.msg.stage_translate");
     if (item.type === "force") return t("activity.msg.force");
+    if (item.type === "run_progress") return t("activity.msg.run_progress");
     if (item.type === "status_change") {
       return `${t("activity.msg.status_change")}: ${t(`status.${item.status}`) || item.status}`;
     }

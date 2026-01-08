@@ -68,6 +68,19 @@ export async function GET(request: Request) {
   const stream = new ReadableStream({
     async start(controller) {
       let active = true;
+      let latestRunEvent:
+        | {
+            id: string;
+            media_id?: string;
+            run_id?: string;
+            type: string;
+            status: string;
+            message: string;
+            created_at: number;
+            stage?: string;
+            progress?: number | null;
+          }
+        | null = null;
       const client = createClient({ url: redisUrl });
       const sub = client.duplicate();
       await client.connect();
@@ -77,10 +90,21 @@ export async function GET(request: Request) {
         const state = await loadState();
         const counts = buildCounts(state);
         const data = listActivity(state, { type, status, page, pageSize });
-        const items = await enrichItems(env, {
+        let items = await enrichItems(env, {
           ...state,
           activity: data.items,
         });
+        if (latestRunEvent) {
+          const matchesType = !type || latestRunEvent.type === type;
+          const matchesStatus =
+            !status ||
+            (status === "processing" &&
+              (latestRunEvent.status === "pending" || latestRunEvent.status === "running")) ||
+            latestRunEvent.status === status;
+          if (matchesType && matchesStatus) {
+            items = [latestRunEvent, ...items.filter((item) => item.id !== latestRunEvent!.id)];
+          }
+        }
         const payload = JSON.stringify({
           ok: true,
           items,
@@ -92,7 +116,40 @@ export async function GET(request: Request) {
         controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
       };
       await push();
-      await sub.subscribe(redisChannel, async () => {
+      await sub.subscribe(redisChannel, async (message) => {
+        try {
+          const parsed = JSON.parse(message) as Record<string, unknown>;
+          const event = parsed.event;
+          const runId = typeof parsed.run_id === "string" ? parsed.run_id : "";
+          const path = typeof parsed.path === "string" ? parsed.path : "";
+          const stage = typeof parsed.stage === "string" ? parsed.stage : "";
+          const progress =
+            typeof parsed.progress === "number" ? parsed.progress : null;
+          const ts = typeof parsed.ts === "number" ? parsed.ts : Math.floor(Date.now() / 1000);
+          if ((event === "run_meta" || event === "run_progress") && (runId || path)) {
+            const state = await loadState();
+            let mediaId: string | undefined;
+            for (const item of Object.values(state.media)) {
+              if (item.path === path) {
+                mediaId = item.id;
+                break;
+              }
+            }
+            latestRunEvent = {
+              id: `run-${runId || path}`,
+              media_id: mediaId,
+              run_id: runId || undefined,
+              type: "run_progress",
+              status: "running",
+              message: "运行进度更新",
+              created_at: ts,
+              stage: stage || undefined,
+              progress,
+            };
+          }
+        } catch {
+          // ignore parse errors
+        }
         await push();
       });
       return async () => {
