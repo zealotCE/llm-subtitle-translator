@@ -1,13 +1,20 @@
+x-common-env: &common_env
+  - .env
+
+x-common-volumes: &common_volumes
+  - &vol_watch ./watch:/watch
+  - &vol_output ./output:/output
+  - &vol_test ./test_video:/test_video
+
 services:
   watcher:
     image: ghcr.io/zealotce/llm-subtitle-translator:${WATCHER_IMAGE_TAG:-latest}
     container_name: auto-subtitle-watcher
-    env_file:
-      - .env
+    env_file: *common_env
     volumes:
-      - ./watch:/watch
-      - ./output:/output
-      - ./test_video:/test_video
+      - *vol_watch
+      - *vol_output
+      - *vol_test
     healthcheck:
       test:
         [
@@ -24,17 +31,16 @@ services:
     container_name: auto-subtitle-web
     ports:
       - "3000:3000"
-    env_file:
-      - .env
+    env_file: *common_env
     environment:
       - WEB_PROJECT_ROOT=/app
       - WEB_CONFIG_PATH=.env
     volumes:
       - ./.env:/app/.env
       - ./.web:/app/.web
-      - ./watch:/watch
-      - ./test_video:/test_video
-      - ./output:/output
+      - *vol_watch
+      - *vol_test
+      - *vol_output
       - ./logs:/app/logs
     healthcheck:
       test:
