@@ -53,6 +53,12 @@ export type ActivityItem = {
   status: string;
   message: string;
   created_at: number;
+  media_title?: string;
+  media_path?: string;
+  progress?: number | null;
+  stage?: string;
+  asr_model?: string;
+  llm_model?: string;
 };
 
 export type StoreState = {

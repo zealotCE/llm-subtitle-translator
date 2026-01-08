@@ -39,13 +39,15 @@ export async function GET(request: Request) {
       if (!media) {
         return item;
       }
-      const runMeta = item.status === "running" ? await loadRunMeta(env, media.path) : null;
+      const runMeta = await loadRunMeta(env, media.path);
       return {
         ...item,
         media_title: media.title,
         media_path: media.path,
         progress: typeof runMeta?.progress === "number" ? runMeta.progress : null,
         stage: typeof runMeta?.stage === "string" ? runMeta.stage : "",
+        asr_model: typeof runMeta?.asr_model === "string" ? runMeta.asr_model : undefined,
+        llm_model: typeof runMeta?.llm_model === "string" ? runMeta.llm_model : undefined,
       };
     })
   );

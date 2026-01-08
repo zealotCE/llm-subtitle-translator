@@ -227,6 +227,16 @@ export default function ActivityPage() {
                       <span>
                         {t("activity.status")}: {t(`status.${item.status}`) || item.status}
                       </span>
+                      {item.asr_model ? (
+                        <span>
+                          {t("activity.model.asr")}: {item.asr_model}
+                        </span>
+                      ) : null}
+                      {item.llm_model ? (
+                        <span>
+                          {t("activity.model.llm")}: {item.llm_model}
+                        </span>
+                      ) : null}
                       {formatStage(item.stage) ? (
                         <span className="rounded-full border border-neutral-200 px-2 py-0.5 text-[11px] text-neutral-500">
                           {formatStage(item.stage)}

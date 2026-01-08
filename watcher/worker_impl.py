@@ -4367,6 +4367,8 @@ def process_video(video_path):
                 "progress": 1,
                 "started_at": run_started_at,
                 "log_path": run_log_path,
+                "asr_model": ASR_MODEL,
+                "llm_model": LLM_MODEL,
             },
         )
         if ASR_MODE == "auto" and not (
@@ -5002,6 +5004,8 @@ def process_video(video_path):
                 "started_at": run_started_at,
                 "finished_at": finished_at,
                 "log_path": run_log_path,
+                "asr_model": ASR_MODEL,
+                "llm_model": LLM_MODEL,
             },
         )
         update_metrics("done", started_at=run_started_at, finished_at=finished_at)
@@ -5063,6 +5067,8 @@ def process_video(video_path):
                 "finished_at": finished_at,
                 "log_path": run_log_path,
                 "progress": None,
+                "asr_model": ASR_MODEL,
+                "llm_model": LLM_MODEL,
             },
         )
         update_metrics("failed", started_at=run_started_at, finished_at=finished_at)
