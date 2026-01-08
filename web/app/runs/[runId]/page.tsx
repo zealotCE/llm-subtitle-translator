@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
@@ -41,6 +41,7 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
   const [preview, setPreview] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const eventRef = useRef<EventSource | null>(null);
   const { t } = useI18n();
   const sourceHint = stages.find((stage) => stage.message.includes("强制 ASR"))
     ? "强制 ASR"
@@ -151,12 +152,51 @@ export default function RunDetailPage({ params }: { params: { runId: string } })
     fetchLog();
   }, [params.runId]);
   useEffect(() => {
-    if (!run || run.status !== "running") return;
-    const handle = window.setInterval(() => {
-      fetchRun();
-    }, 3000);
-    return () => window.clearInterval(handle);
-  }, [run?.status, params.runId]);
+    if (!run) return;
+    if (eventRef.current) {
+      eventRef.current.close();
+      eventRef.current = null;
+    }
+    const source = new EventSource(`/api/v3/runs/${params.runId}/stream`);
+    eventRef.current = source;
+    source.onmessage = (event) => {
+      if (!event.data) return;
+      try {
+        const payload = JSON.parse(event.data) as {
+          run_id?: string;
+          status?: string;
+          stage?: string;
+          progress?: number | null;
+          asr_model?: string;
+          llm_model?: string;
+        };
+        setRun((prev) => {
+          if (!prev) return prev;
+          if (payload.run_id && payload.run_id !== prev.id) return prev;
+          return {
+            ...prev,
+            status: payload.status || prev.status,
+            stage: payload.stage || prev.stage,
+            progress:
+              typeof payload.progress === "number" ? payload.progress : prev.progress,
+            asr_model: payload.asr_model || prev.asr_model,
+            llm_model: payload.llm_model || prev.llm_model,
+          };
+        });
+      } catch {
+        // ignore parse errors
+      }
+    };
+    source.onerror = () => {
+      source.close();
+    };
+    return () => {
+      source.close();
+      if (eventRef.current === source) {
+        eventRef.current = null;
+      }
+    };
+  }, [params.runId, run?.id]);
 
   return (
     <main className="min-h-screen px-6 py-10">

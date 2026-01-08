@@ -791,6 +791,11 @@ def log(level, message, **kwargs):
         "level": level,
         "message": message,
     }
+    context_run_id = getattr(RUN_LOG_CONTEXT, "run_id", "")
+    if context_run_id and "run_id" not in record:
+        record["run_id"] = context_run_id
+    if context_run_id and "run_id" not in kwargs:
+        kwargs["run_id"] = context_run_id
     if kwargs:
         record.update(kwargs)
     parts = [f"[{level}]", message]
@@ -2774,6 +2779,20 @@ def extract_sentences(asr_result):
     return normalized
 
 
+def count_asr_items(response):
+    try:
+        data = to_dict(response)
+    except Exception:  # noqa: BLE001
+        data = response if isinstance(response, dict) else {}
+    sentences = extract_sentences(data)
+    word_count = 0
+    for item in sentences:
+        words = item.get("words") or []
+        if isinstance(words, list):
+            word_count += len(words)
+    return len(sentences), word_count
+
+
 def segment_sentences_to_subtitles(sentences, max_duration_seconds, max_chars):
     segments = []
     break_punct = {"。", "！", "？", "!", "?"}
@@ -3047,16 +3066,38 @@ def segments_to_srt(segments):
     return "\n".join(lines).strip() + "\n"
 
 
+def select_preferred_text(current, candidate):
+    if not current:
+        return candidate
+    if not candidate:
+        return current
+    current_jp = _is_japanese_text(current)
+    candidate_jp = _is_japanese_text(candidate)
+    if candidate_jp and not current_jp:
+        return candidate
+    if current_jp and not candidate_jp:
+        return current
+    if len(candidate) > len(current):
+        return candidate
+    return current
+
+
 def dedupe_segments(segments):
     if not segments:
         return segments
-    seen = set()
+    seen = {}
     output = []
     for seg in segments:
-        key = (seg.get("start_ms"), seg.get("end_ms"), seg.get("text"))
+        start = seg.get("start_ms")
+        end = seg.get("end_ms")
+        text = seg.get("text")
+        key = (start, end)
         if key in seen:
+            existing = seen[key]
+            preferred = select_preferred_text(existing["text"], text)
+            existing["text"] = preferred
             continue
-        seen.add(key)
+        seen[key] = seg
         output.append(seg)
     return output
 
@@ -3064,13 +3105,16 @@ def dedupe_segments(segments):
 def dedupe_subtitles(subs):
     if not subs:
         return subs
-    seen = set()
+    seen = {}
     output = []
     for sub in subs:
-        key = (sub.start, sub.end, sub.content)
+        key = (sub.start, sub.end)
         if key in seen:
+            existing = seen[key]
+            preferred = select_preferred_text(existing.content, sub.content)
+            existing.content = preferred
             continue
-        seen.add(key)
+        seen[key] = sub
         output.append(sub)
     for idx, sub in enumerate(output, start=1):
         sub.index = idx
@@ -4397,6 +4441,7 @@ def process_video(video_path):
     stage = "init"
     try:
         RUN_LOG_CONTEXT.path = run_log_path
+        RUN_LOG_CONTEXT.run_id = run_id
         _write_run_meta(
             run_meta_path,
             {
@@ -4664,6 +4709,16 @@ def process_video(video_path):
                     audio_track.index if audio_track else None,
                     sample_rate=ASR_SAMPLE_RATE,
                 )
+                wav_seconds = wav_duration_seconds(tmp_wav)
+                log(
+                    "INFO",
+                    "音频抽取完成",
+                    path=video_path,
+                    wav=tmp_wav,
+                    duration_seconds=round(wav_seconds, 2) if wav_seconds else None,
+                    sample_rate=ASR_SAMPLE_RATE,
+                    audio_index=audio_track.index if audio_track else None,
+                )
 
         stage = "asr_call"
         _update_run_meta(run_meta_path, {"stage": stage, "progress": 20})
@@ -4750,11 +4805,27 @@ def process_video(video_path):
                     raise RuntimeError("实时 ASR 无有效分片结果")
                 subs = merged_subs
                 srt_text = srt.compose(subs)
+                log(
+                    "INFO",
+                    "实时 ASR 完成",
+                    path=video_path,
+                    model=ASR_MODEL,
+                    segments=len(subs),
+                    total_chunks=total,
+                    failed_chunks=failures,
+                )
             else:
                 object_key = f"{OSS_PREFIX}{os.path.basename(tmp_wav)}"
                 bucket = oss_client()
                 upload_to_oss(bucket, tmp_wav, object_key)
                 url = oss_url(bucket, object_key)
+                log(
+                    "INFO",
+                    "OSS 上传完成",
+                    path=video_path,
+                    object_key=object_key,
+                    url=url,
+                )
 
                 log("INFO", "离线 ASR 请求中", path=video_path, model=ASR_MODEL)
                 response = dashscope_transcribe(
@@ -4762,11 +4833,28 @@ def process_video(video_path):
                     hotwords=hotwords if hotwords else None,
                     vocabulary_id=vocab_id,
                 )
+                sentence_count, word_count = count_asr_items(response)
+                log(
+                    "INFO",
+                    "离线 ASR 响应完成",
+                    path=video_path,
+                    model=ASR_MODEL,
+                    sentences=sentence_count,
+                    words=word_count,
+                )
                 if SAVE_RAW_JSON:
                     with open(raw_path, "w", encoding="utf-8") as f:
                         json.dump(to_dict(response), f, ensure_ascii=False, indent=2)
 
                 subs, srt_text = build_srt(response, segment_mode=segment_mode)
+                if subs:
+                    log(
+                        "INFO",
+                        "ASR 结果生成",
+                        path=video_path,
+                        model=ASR_MODEL,
+                        segments=len(subs),
+                    )
 
             if subs is None or srt_text is None:
                 raise RuntimeError("ASR 结果为空")
@@ -4924,6 +5012,7 @@ def process_video(video_path):
                         path=video_path,
                         dst_langs=dst_langs,
                         bilingual=BILINGUAL,
+                        segments=len(subs) if subs else 0,
                     )
                     for dst_lang in dst_langs:
                         if dst_lang == SIMPLIFIED_LANG:
@@ -5115,6 +5204,7 @@ def process_video(video_path):
     finally:
         if getattr(RUN_LOG_CONTEXT, "path", "") == run_log_path:
             RUN_LOG_CONTEXT.path = ""
+            RUN_LOG_CONTEXT.run_id = ""
         remove_lock(lock_path)
         try:
             if os.path.exists(tmp_wav):
