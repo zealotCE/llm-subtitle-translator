@@ -97,6 +97,11 @@ ASR_MODEL = os.getenv("ASR_MODEL", "paraformer-8k-v2")
 ASR_REALTIME_MODELS = os.getenv("ASR_REALTIME_MODELS", "").strip()
 ASR_OFFLINE_MODELS = os.getenv("ASR_OFFLINE_MODELS", "").strip()
 LANGUAGE_HINTS = [h.strip() for h in os.getenv("LANGUAGE_HINTS", "ja,en").split(",") if h.strip()]
+ASR_SUPPORTED_LANGS = [
+    item.strip()
+    for item in os.getenv("ASR_SUPPORTED_LANGS", "").split(",")
+    if item.strip()
+]
 
 REDIS_URL = os.getenv("REDIS_URL", "").strip()
 REDIS_CHANNEL = os.getenv("REDIS_CHANNEL", "autosub:activity").strip()
@@ -1859,6 +1864,15 @@ def _normalize_lang_for_asr(lang):
     if norm.startswith("chi") or norm.startswith("zh"):
         return "zh"
     return norm or "auto"
+
+
+def is_asr_lang_supported(lang):
+    if not ASR_SUPPORTED_LANGS:
+        return True
+    if not lang or lang == "auto":
+        return True
+    supported = {_normalize_lang_for_asr(item) for item in ASR_SUPPORTED_LANGS}
+    return _normalize_lang_for_asr(lang) in supported
 
 
 def _is_japanese_text(text):
@@ -4696,6 +4710,9 @@ def process_video(video_path):
                 title_aliases = resolve_title_aliases(path_info.title, alias_map)
                 work_glossary = load_work_glossary_by_titles([path_info.title] + title_aliases)
                 asr_lang = _normalize_lang_for_asr(audio_track.language if audio_track else SRC_LANG)
+                if not is_asr_lang_supported(asr_lang):
+                    log("ERROR", "ASR 不支持语言", path=video_path, language=asr_lang)
+                    raise RuntimeError("ASR 不支持语言")
                 hotwords = build_asr_hotwords(None, work_glossary, title_aliases, asr_lang)
                 if hotwords:
                     log("INFO", "ASR 热词启用", path=video_path, count=len(hotwords))
