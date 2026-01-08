@@ -59,6 +59,15 @@ export default function ActivityPage() {
     return `${t("activity.progress.running")} ${percent}%`;
   };
 
+  const formatStage = (value?: string) => {
+    if (!value) return "";
+    if (value.startsWith("asr")) return t("activity.stage.asr");
+    if (value.startsWith("translate")) return t("activity.stage.translate");
+    if (value === "probe") return t("activity.stage.probe");
+    if (value === "subtitle_select") return t("activity.stage.subtitle");
+    return value;
+  };
+
   const fetchActivity = async () => {
     const params = new URLSearchParams();
     if (type) params.set("type", type);
@@ -202,6 +211,11 @@ export default function ActivityPage() {
                       <span>
                         {t("activity.status")}: {t(`status.${item.status}`) || item.status}
                       </span>
+                      {formatStage(item.stage) ? (
+                        <span className="rounded-full border border-neutral-200 px-2 py-0.5 text-[11px] text-neutral-500">
+                          {formatStage(item.stage)}
+                        </span>
+                      ) : null}
                       {formatProgress(item) ? <span>{formatProgress(item)}</span> : null}
                       <span>{new Date(item.created_at * 1000).toLocaleString()}</span>
                     </div>
