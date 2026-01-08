@@ -93,7 +93,7 @@ ASR_DISFLUENCY_REMOVAL_ENABLED = (
 ASR_HEARTBEAT = os.getenv("ASR_HEARTBEAT", "false").lower() == "true"
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
-ASR_MODEL = os.getenv("ASR_MODEL", "paraformer-v2")
+ASR_MODEL = os.getenv("ASR_MODEL", "paraformer-8k-v2")
 ASR_REALTIME_MODELS = os.getenv("ASR_REALTIME_MODELS", "").strip()
 ASR_OFFLINE_MODELS = os.getenv("ASR_OFFLINE_MODELS", "").strip()
 LANGUAGE_HINTS = [h.strip() for h in os.getenv("LANGUAGE_HINTS", "ja,en").split(",") if h.strip()]
@@ -941,7 +941,8 @@ def resolve_asr_mode(mode, model_name):
         if offline_models and name in offline_models:
             return "offline"
         if realtime_models or offline_models:
-            return "offline"
+            log("WARN", "ASR_MODE=auto 但模型未命中列表", model=name)
+            raise RuntimeError("ASR_MODEL 未包含在 ASR_REALTIME_MODELS/ASR_OFFLINE_MODELS 中")
         return "realtime" if is_realtime_model(model_name) else "offline"
     return mode
 
