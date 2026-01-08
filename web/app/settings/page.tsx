@@ -20,9 +20,10 @@ function isSensitive(key: string) {
 type Field = {
   key: string;
   labelKey: string;
+  helpKey?: string;
   type: "text" | "number" | "switch" | "select";
   wide?: boolean;
-  options?: string[];
+  options?: Array<string | { labelKey: string; options: string[] }>;
   allowCustom?: boolean;
 };
 
@@ -35,11 +36,37 @@ const GROUPS: Group[] = [
   {
     titleKey: "settings.group.watch",
     fields: [
-      { key: "WATCH_DIRS", labelKey: "settings.label.watchDirs", wide: true, type: "text" },
-      { key: "WATCH_RECURSIVE", labelKey: "settings.label.watchRecursive", type: "switch" },
-      { key: "SCAN_INTERVAL", labelKey: "settings.label.scanInterval", type: "number" },
-      { key: "OUTPUT_TO_SOURCE_DIR", labelKey: "settings.label.outputToSource", type: "switch" },
-      { key: "DELETE_SOURCE_AFTER_DONE", labelKey: "settings.label.deleteSourceAfterDone", type: "switch" },
+      {
+        key: "WATCH_DIRS",
+        labelKey: "settings.label.watchDirs",
+        helpKey: "settings.help.watchDirs",
+        wide: true,
+        type: "text",
+      },
+      {
+        key: "WATCH_RECURSIVE",
+        labelKey: "settings.label.watchRecursive",
+        helpKey: "settings.help.watchRecursive",
+        type: "switch",
+      },
+      {
+        key: "SCAN_INTERVAL",
+        labelKey: "settings.label.scanInterval",
+        helpKey: "settings.help.scanInterval",
+        type: "number",
+      },
+      {
+        key: "OUTPUT_TO_SOURCE_DIR",
+        labelKey: "settings.label.outputToSource",
+        helpKey: "settings.help.outputToSource",
+        type: "switch",
+      },
+      {
+        key: "DELETE_SOURCE_AFTER_DONE",
+        labelKey: "settings.label.deleteSourceAfterDone",
+        helpKey: "settings.help.deleteSourceAfterDone",
+        type: "switch",
+      },
     ],
   },
   {
@@ -48,17 +75,34 @@ const GROUPS: Group[] = [
       {
         key: "ASR_MODE",
         labelKey: "settings.label.asrMode",
+        helpKey: "settings.help.asrMode",
         type: "select",
-        options: ["offline", "realtime"],
+        options: ["auto", "offline", "realtime"],
       },
       {
         key: "ASR_MODEL",
         labelKey: "settings.label.asrModel",
+        helpKey: "settings.help.asrModel",
         type: "select",
-        options: ["paraformer-v2", "fun-asr-realtime"],
+        options: [
+          {
+            labelKey: "settings.option.asrGroupOffline",
+            options: ["paraformer-8k-v2", "paraformer-v2", "fun-asr-2025-11-07"],
+          },
+          {
+            labelKey: "settings.option.asrGroupRealtime",
+            options: ["fun-asr-realtime-2025-11-07", "paraformer-realtime-8k-v2", "paraformer-realtime-v2"],
+          },
+        ],
         allowCustom: true,
       },
-      { key: "LANGUAGE_HINTS", labelKey: "settings.label.languageHints", wide: true, type: "text" },
+      {
+        key: "LANGUAGE_HINTS",
+        labelKey: "settings.label.languageHints",
+        helpKey: "settings.help.languageHints",
+        wide: true,
+        type: "text",
+      },
     ],
   },
   {
@@ -67,22 +111,25 @@ const GROUPS: Group[] = [
       {
         key: "LLM_MODEL",
         labelKey: "settings.label.llmModel",
+        helpKey: "settings.help.llmModel",
         wide: true,
         type: "select",
         options: ["deepseek-v3.2", "qwen3-max-preview", "glm-4.7", "kimi-k2-thinking"],
         allowCustom: true,
       },
-      { key: "LLM_API_KEY", labelKey: "settings.label.llmApiKey", wide: true, type: "text" },
-      { key: "LLM_BASE_URL", labelKey: "settings.label.llmBaseUrl", wide: true, type: "text" },
+      { key: "LLM_API_KEY", labelKey: "settings.label.llmApiKey", helpKey: "settings.help.llmApiKey", wide: true, type: "text" },
+      { key: "LLM_BASE_URL", labelKey: "settings.label.llmBaseUrl", helpKey: "settings.help.llmBaseUrl", wide: true, type: "text" },
       {
         key: "BATCH_LINES",
         labelKey: "settings.label.batchLines",
+        helpKey: "settings.help.batchLines",
         type: "select",
         options: ["5", "10", "20", "40"],
       },
       {
         key: "MAX_CONCURRENT_TRANSLATIONS",
         labelKey: "settings.label.concurrency",
+        helpKey: "settings.help.concurrency",
         type: "select",
         options: ["1", "2", "4", "8"],
       },
@@ -92,12 +139,19 @@ const GROUPS: Group[] = [
     titleKey: "settings.group.oss",
     fields: [
       { key: "OSS_ENDPOINT", labelKey: "settings.label.ossEndpoint", type: "text" },
-      { key: "OSS_BUCKET", labelKey: "settings.label.ossBucket", type: "text" },
-      { key: "OSS_ACCESS_KEY_ID", labelKey: "settings.label.ossAccessKeyId", wide: true, type: "text" },
-      { key: "OSS_ACCESS_KEY_SECRET", labelKey: "settings.label.ossAccessKeySecret", wide: true, type: "text" },
+      { key: "OSS_BUCKET", labelKey: "settings.label.ossBucket", helpKey: "settings.help.ossBucket", type: "text" },
+      { key: "OSS_ACCESS_KEY_ID", labelKey: "settings.label.ossAccessKeyId", helpKey: "settings.help.ossAccessKeyId", wide: true, type: "text" },
+      {
+        key: "OSS_ACCESS_KEY_SECRET",
+        labelKey: "settings.label.ossAccessKeySecret",
+        helpKey: "settings.help.ossAccessKeySecret",
+        wide: true,
+        type: "text",
+      },
       {
         key: "OSS_URL_MODE",
         labelKey: "settings.label.ossUrlMode",
+        helpKey: "settings.help.ossUrlMode",
         type: "select",
         options: ["presign", "public"],
       },
@@ -106,16 +160,27 @@ const GROUPS: Group[] = [
   {
     titleKey: "settings.group.web",
     fields: [
-      { key: "WEB_AUTH_ENABLED", labelKey: "settings.label.webAuthEnabled", type: "switch" },
-      { key: "WEB_AUTH_USER", labelKey: "settings.label.webAuthUser", type: "text" },
-      { key: "WEB_AUTH_PASSWORD", labelKey: "settings.label.webAuthPassword", type: "text" },
+      { key: "WEB_AUTH_ENABLED", labelKey: "settings.label.webAuthEnabled", helpKey: "settings.help.webAuthEnabled", type: "switch" },
+      { key: "WEB_AUTH_USER", labelKey: "settings.label.webAuthUser", helpKey: "settings.help.webAuthUser", type: "text" },
+      {
+        key: "WEB_AUTH_PASSWORD",
+        labelKey: "settings.label.webAuthPassword",
+        helpKey: "settings.help.webAuthPassword",
+        type: "text",
+      },
     ],
   },
   {
     titleKey: "settings.group.metadata",
     fields: [
-      { key: "TMDB_API_KEY", labelKey: "settings.label.tmdbApiKey", wide: true, type: "text" },
-      { key: "BANGUMI_ACCESS_TOKEN", labelKey: "settings.label.bangumiToken", wide: true, type: "text" },
+      { key: "TMDB_API_KEY", labelKey: "settings.label.tmdbApiKey", helpKey: "settings.help.tmdbApiKey", wide: true, type: "text" },
+      {
+        key: "BANGUMI_ACCESS_TOKEN",
+        labelKey: "settings.label.bangumiToken",
+        helpKey: "settings.help.bangumiToken",
+        wide: true,
+        type: "text",
+      },
     ],
   },
 ];
@@ -167,6 +232,35 @@ export default function SettingsPage() {
   }, []);
 
   const entries = useMemo(() => Object.entries(values).sort(([a], [b]) => a.localeCompare(b)), [values]);
+
+  const flattenOptions = (options: Field["options"]) => {
+    if (!options) return [];
+    return options.flatMap((option) =>
+      typeof option === "string" ? [option] : option.options
+    );
+  };
+
+  const renderOptions = (options: Field["options"]) => {
+    if (!options) return null;
+    return options.map((option) => {
+      if (typeof option === "string") {
+        return (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        );
+      }
+      return (
+        <optgroup key={option.labelKey} label={t(option.labelKey)}>
+          {option.options.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </optgroup>
+      );
+    });
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -290,7 +384,8 @@ export default function SettingsPage() {
                 const isSwitch = field.type === "switch";
                 const isSelect = field.type === "select";
                 const isNumber = field.type === "number";
-                const options = (field.options || []).filter((option, index, arr) => arr.indexOf(option) === index);
+                const flatOptions = flattenOptions(field.options);
+                const options = flatOptions.filter((option, index, arr) => arr.indexOf(option) === index);
                 const isCustomValue = field.allowCustom && value && !options.includes(value);
                 const selectValue =
                   isSelect && field.allowCustom
@@ -302,19 +397,24 @@ export default function SettingsPage() {
                   <div key={field.key} className={`grid gap-2 ${field.wide ? "md:col-span-2" : ""}`}>
                     <label className="text-sm text-neutral-500">{t(field.labelKey)}</label>
                     {isSwitch ? (
-                      <div className="flex items-center gap-3">
-                        <Switch
-                          checked={value === "true"}
-                          onCheckedChange={(checked) =>
-                            setValues((prev) => ({
-                              ...prev,
-                              [field.key]: checked ? "true" : "false",
-                            }))
-                          }
-                        />
-                        <span className="text-xs text-neutral-500">
-                          {value === "true" ? t("settings.option.on") : t("settings.option.off")}
-                        </span>
+                      <div className="grid gap-2">
+                        <div className="flex items-center gap-3">
+                          <Switch
+                            checked={value === "true"}
+                            onCheckedChange={(checked) =>
+                              setValues((prev) => ({
+                                ...prev,
+                                [field.key]: checked ? "true" : "false",
+                              }))
+                            }
+                          />
+                          <span className="text-xs text-neutral-500">
+                            {value === "true" ? t("settings.option.on") : t("settings.option.off")}
+                          </span>
+                        </div>
+                        {field.helpKey ? (
+                          <p className="text-xs text-neutral-500">{t(field.helpKey)}</p>
+                        ) : null}
                       </div>
                     ) : isSelect ? (
                       <div className="grid gap-2">
@@ -330,11 +430,7 @@ export default function SettingsPage() {
                             }))
                           }
                         >
-                          {options.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
+                          {renderOptions(field.options)}
                           {field.allowCustom ? (
                             <option value="__custom__">{t("settings.option.custom")}</option>
                           ) : null}
@@ -351,19 +447,27 @@ export default function SettingsPage() {
                             }
                           />
                         ) : null}
+                        {field.helpKey ? (
+                          <p className="text-xs text-neutral-500">{t(field.helpKey)}</p>
+                        ) : null}
                       </div>
                     ) : (
-                      <Input
-                        type={isNumber ? "number" : "text"}
-                        value={value}
-                        placeholder={isSensitive(field.key) ? t("settings.hidden") : ""}
-                        onChange={(event) =>
-                          setValues((prev) => ({
-                            ...prev,
-                            [field.key]: event.target.value,
-                          }))
-                        }
-                      />
+                      <div className="grid gap-2">
+                        <Input
+                          type={isNumber ? "number" : "text"}
+                          value={value}
+                          placeholder={isSensitive(field.key) ? t("settings.hidden") : ""}
+                          onChange={(event) =>
+                            setValues((prev) => ({
+                              ...prev,
+                              [field.key]: event.target.value,
+                            }))
+                          }
+                        />
+                        {field.helpKey ? (
+                          <p className="text-xs text-neutral-500">{t(field.helpKey)}</p>
+                        ) : null}
+                      </div>
                     )}
                   </div>
                 );

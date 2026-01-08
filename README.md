@@ -189,7 +189,9 @@ docker exec <container> sh -c 'touch /watch/.scan_now'
 ### DashScope 百炼
 - `DASHSCOPE_API_KEY`：必填
 - `ASR_MODEL`：默认 `paraformer-v2`
-- `ASR_MODE`：`offline|realtime`（默认 `offline`，`realtime` 不依赖 OSS）
+- `ASR_MODE`：`auto|offline|realtime`（默认 `auto`，自动按模型选择；`realtime` 不依赖 OSS）
+- `ASR_REALTIME_MODELS`：实时模型列表（逗号分隔，用于 `auto` 判断）
+- `ASR_OFFLINE_MODELS`：离线模型列表（逗号分隔，用于 `auto` 判断）
 - `SEGMENT_MODE`：`post|auto`（默认 `post`）
 - `ASR_SAMPLE_RATE`：采样率（默认 `16000`）
 - `ASR_REALTIME_CHUNK_SECONDS`：实时 ASR 分片时长（秒，默认 `900`）
@@ -205,6 +207,9 @@ docker exec <container> sh -c 'touch /watch/.scan_now'
 - `ASR_REALTIME_FALLBACK_ENABLED`：失败率过高时启用 VAD 断句重试（默认 `true`）
 - `ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE`：VAD 静音阈值（默认 `1200`）
 - `ASR_REALTIME_FALLBACK_MULTI_THRESHOLD`：VAD 多阈值防止过长（默认 `true`）
+- `ASR_FAIL_COOLDOWN_SECONDS`：ASR 失败冷却时间（秒，默认 `3600`）
+- `ASR_MAX_FAILURES`：连续失败上限（默认 `3`）
+- `ASR_FAIL_ALERT`：ASR 失败强提示日志（默认 `true`）
 - `ASR_SEMANTIC_PUNCTUATION_ENABLED`：实时 ASR 语义断句（默认 `false`）
 - `ASR_MAX_SENTENCE_SILENCE`：实时 ASR VAD 静音阈值 ms（默认 `800`）
 - `ASR_MULTI_THRESHOLD_MODE_ENABLED`：实时 ASR 多阈值防止过长（默认 `false`）

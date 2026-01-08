@@ -2,18 +2,33 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-type OptionItem = { value: string; label: string };
+type OptionItem = { value: string; label: string; group?: string };
 
 function toOptions(children: React.ReactNode): OptionItem[] {
   const items = React.Children.toArray(children);
-  return items
-    .filter((child) => React.isValidElement(child) && child.type === "option")
-    .map((child) => {
+  const options: OptionItem[] = [];
+  items.forEach((child) => {
+    if (!React.isValidElement(child)) return;
+    if (child.type === "option") {
       const option = child as React.ReactElement<{ value?: string; children?: React.ReactNode }>;
       const value = String(option.props.value ?? option.props.children ?? "");
       const label = typeof option.props.children === "string" ? option.props.children : value;
-      return { value, label };
-    });
+      options.push({ value, label });
+      return;
+    }
+    if (child.type === "optgroup") {
+      const group = child as React.ReactElement<{ label?: string; children?: React.ReactNode }>;
+      const groupLabel = String(group.props.label ?? "");
+      React.Children.forEach(group.props.children, (inner) => {
+        if (!React.isValidElement(inner) || inner.type !== "option") return;
+        const option = inner as React.ReactElement<{ value?: string; children?: React.ReactNode }>;
+        const value = String(option.props.value ?? option.props.children ?? "");
+        const label = typeof option.props.children === "string" ? option.props.children : value;
+        options.push({ value, label, group: groupLabel });
+      });
+    }
+  });
+  return options;
 }
 
 type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement>;
@@ -61,19 +76,29 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
         </button>
         {open ? (
           <div className="absolute left-0 top-full z-40 mt-2 w-full rounded-2xl border border-neutral-200 bg-white p-1 text-sm shadow-lg">
-            {options.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => handleSelect(opt.value)}
-                className={cn(
-                  "w-full rounded-lg px-3 py-2 text-left hover:bg-neutral-100",
-                  opt.value === String(value ?? "") ? "bg-neutral-100 text-neutral-900" : "text-neutral-600"
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
+            {options.map((opt, index) => {
+              const prevGroup = index > 0 ? options[index - 1].group : undefined;
+              const showGroup = opt.group && opt.group !== prevGroup;
+              return (
+                <div key={`${opt.group || "default"}-${opt.value}`}>
+                  {showGroup ? (
+                    <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                      {opt.group}
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => handleSelect(opt.value)}
+                    className={cn(
+                      "w-full rounded-lg px-3 py-2 text-left hover:bg-neutral-100",
+                      opt.value === String(value ?? "") ? "bg-neutral-100 text-neutral-900" : "text-neutral-600"
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         ) : null}
         <select
