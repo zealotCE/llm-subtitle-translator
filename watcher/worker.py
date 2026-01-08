@@ -98,6 +98,9 @@ ASR_REALTIME_MODELS = os.getenv("ASR_REALTIME_MODELS", "").strip()
 ASR_OFFLINE_MODELS = os.getenv("ASR_OFFLINE_MODELS", "").strip()
 LANGUAGE_HINTS = [h.strip() for h in os.getenv("LANGUAGE_HINTS", "ja,en").split(",") if h.strip()]
 
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+REDIS_CHANNEL = os.getenv("REDIS_CHANNEL", "autosub:activity").strip()
+
 OSS_ENDPOINT = os.getenv("OSS_ENDPOINT", "")
 OSS_BUCKET = os.getenv("OSS_BUCKET", "")
 OSS_ACCESS_KEY_ID = os.getenv("OSS_ACCESS_KEY_ID", "")
@@ -235,6 +238,7 @@ METRICS_STATE = {
     "last_duration_ms": None,
 }
 RUN_LOG_CONTEXT = threading.local()
+REDIS_CLIENT = None
 
 CACHE_DIR = os.path.join(OUT_DIR, "cache")
 CACHE_DB = os.path.join(CACHE_DIR, "translate_cache.db")
@@ -816,6 +820,33 @@ def log(level, message, **kwargs):
             pass
 
 
+def _get_redis_client():
+    if not REDIS_URL:
+        return None
+    try:
+        import redis  # type: ignore
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        return redis.Redis.from_url(REDIS_URL, decode_responses=True)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def publish_event(payload):
+    global REDIS_CLIENT
+    if not REDIS_URL:
+        return
+    if REDIS_CLIENT is None:
+        REDIS_CLIENT = _get_redis_client()
+    if REDIS_CLIENT is None:
+        return
+    try:
+        REDIS_CLIENT.publish(REDIS_CHANNEL, json.dumps(payload, ensure_ascii=False))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def update_metrics(status, started_at=None, finished_at=None):
     if not METRICS_ENABLED or not METRICS_PATH:
         return
@@ -965,6 +996,17 @@ def _write_run_meta(path, data):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        publish_event(
+            {
+                "event": "run_meta",
+                "run_id": data.get("run_id"),
+                "path": data.get("path"),
+                "stage": data.get("stage"),
+                "status": data.get("status"),
+                "progress": data.get("progress"),
+                "ts": int(time.time()),
+            }
+        )
     except Exception:  # noqa: BLE001
         pass
 
@@ -979,6 +1021,17 @@ def _update_run_meta(path, updates):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(merged, f, ensure_ascii=False, indent=2)
+        publish_event(
+            {
+                "event": "run_progress",
+                "run_id": merged.get("run_id"),
+                "path": merged.get("path"),
+                "stage": merged.get("stage"),
+                "status": merged.get("status"),
+                "progress": merged.get("progress"),
+                "ts": int(time.time()),
+            }
+        )
     except Exception:  # noqa: BLE001
         pass
 

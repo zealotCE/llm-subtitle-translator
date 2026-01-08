@@ -6,7 +6,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg inotify-tools \
   && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir dashscope oss2 srt requests pyyaml
+RUN pip install --no-cache-dir dashscope oss2 srt requests pyyaml redis
 
 COPY worker.py /app/worker.py
 COPY web.py /app/web.py

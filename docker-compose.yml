@@ -7,10 +7,17 @@ x-common-volumes: &common_volumes
   - &vol_test ./test_video:/test_video
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: auto-subtitle-redis
+    restart: unless-stopped
   watcher:
     image: ghcr.io/zealotce/llm-subtitle-translator:${WATCHER_IMAGE_TAG:-latest}
     container_name: auto-subtitle-watcher
     env_file: *common_env
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - REDIS_CHANNEL=${REDIS_CHANNEL:-autosub:activity}
     volumes:
       - *vol_watch
       - *vol_output
@@ -35,6 +42,8 @@ services:
     environment:
       - WEB_PROJECT_ROOT=/app
       - WEB_CONFIG_PATH=.env
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - REDIS_CHANNEL=${REDIS_CHANNEL:-autosub:activity}
     volumes:
       - ./.env:/app/.env
       - ./.web:/app/.web

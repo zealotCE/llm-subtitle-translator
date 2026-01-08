@@ -2,6 +2,7 @@ import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
 import { listActivity, loadState } from "@/lib/server/v3/store";
 import { loadRunMeta } from "@/lib/server/media";
+import { createClient } from "redis";
 
 export const runtime = "nodejs";
 
@@ -51,6 +52,11 @@ export async function GET(request: Request) {
   if (!auth.ok) {
     return new Response("unauthorized", { status: 401 });
   }
+  const redisUrl = env.REDIS_URL || process.env.REDIS_URL || "";
+  const redisChannel = env.REDIS_CHANNEL || process.env.REDIS_CHANNEL || "autosub:activity";
+  if (!redisUrl) {
+    return new Response("redis not configured", { status: 400 });
+  }
   const url = new URL(request.url);
   const type = url.searchParams.get("type") || "";
   const status = url.searchParams.get("status") || "";
@@ -59,7 +65,13 @@ export async function GET(request: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      let active = true;
+      const client = createClient({ url: redisUrl });
+      const sub = client.duplicate();
+      await client.connect();
+      await sub.connect();
       const push = async () => {
+        if (!active) return;
         const state = await loadState();
         const counts = buildCounts(state);
         const data = listActivity(state, { type, status, page, pageSize });
@@ -78,8 +90,19 @@ export async function GET(request: Request) {
         controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
       };
       await push();
-      const timer = setInterval(push, 2000);
-      return () => clearInterval(timer);
+      await sub.subscribe(redisChannel, async () => {
+        await push();
+      });
+      return async () => {
+        active = false;
+        try {
+          await sub.unsubscribe(redisChannel);
+        } catch {
+          // ignore
+        }
+        await sub.quit();
+        await client.quit();
+      };
     },
     cancel() {
       // no-op
