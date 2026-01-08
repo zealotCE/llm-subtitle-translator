@@ -74,6 +74,9 @@ ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE = int(
 ASR_REALTIME_FALLBACK_MULTI_THRESHOLD = (
     os.getenv("ASR_REALTIME_FALLBACK_MULTI_THRESHOLD", "true").lower() == "true"
 )
+ASR_FAIL_COOLDOWN_SECONDS = int(os.getenv("ASR_FAIL_COOLDOWN_SECONDS", "3600") or "0")
+ASR_MAX_FAILURES = int(os.getenv("ASR_MAX_FAILURES", "3") or "0")
+ASR_FAIL_ALERT = os.getenv("ASR_FAIL_ALERT", "true").strip().lower() != "false"
 ASR_SEMANTIC_PUNCTUATION_ENABLED = (
     os.getenv("ASR_SEMANTIC_PUNCTUATION_ENABLED", "false").lower() == "true"
 )
@@ -316,7 +319,7 @@ ASR_REALTIME_STREAM_FRAME_MS = _clamp_positive(ASR_REALTIME_STREAM_FRAME_MS, 100
 ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE = _clamp_positive(
     ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE, 1200
 )
-if ASR_MODE not in {"offline", "realtime"}:
+if ASR_MODE not in {"offline", "realtime", "auto"}:
     ASR_MODE = "offline"
 if SEGMENT_MODE not in {"post", "auto"}:
     SEGMENT_MODE = "post"
@@ -838,6 +841,45 @@ def output_paths(name, out_dir):
 
 def asr_failed_path(name, out_dir):
     return os.path.join(out_dir, f"{name}.asr_failed")
+
+
+def load_asr_fail_state(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception:  # noqa: BLE001
+        return {}
+    return {}
+
+
+def save_asr_fail_state(path, data):
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def is_realtime_model(model_name):
+    if not model_name:
+        return False
+    name = model_name.strip().lower()
+    realtime_models = {
+        "fun-asr-realtime-2025-11-07",
+        "paraformer-realtime-8k-v2",
+        "paraformer-realtime-v2",
+        "fun-asr-realtime",
+        "paraformer-realtime",
+    }
+    return name in realtime_models or name.startswith("fun-asr-realtime")
+
+
+def resolve_asr_mode(mode, model_name):
+    if mode == "auto":
+        return "realtime" if is_realtime_model(model_name) else "offline"
+    return mode
 
 
 def _run_log_token(video_path):
@@ -4074,6 +4116,11 @@ def should_skip(video_path, force_once=False):
             return False, "lock_stale_removed"
         return True, "lock_exists"
     if not force_once and os.path.exists(fail_path):
+        state = load_asr_fail_state(fail_path)
+        count = int(state.get("count", 0) or 0)
+        fatal = bool(state.get("fatal", False))
+        if ASR_MAX_FAILURES > 0 and count >= ASR_MAX_FAILURES:
+            return True, "asr_failed_fatal"
         if ASR_FAIL_COOLDOWN_SECONDS <= 0:
             return True, "asr_failed"
         age = time.time() - os.path.getmtime(fail_path)
@@ -4096,6 +4143,7 @@ def process_video(video_path):
     overrides = load_job_overrides(video_path)
     override_path = job_override_path(video_path)
     asr_mode = (overrides.get("asr_mode") or ASR_MODE).strip().lower()
+    asr_mode = resolve_asr_mode(asr_mode, ASR_MODEL)
     segment_mode = (overrides.get("segment_mode") or SEGMENT_MODE).strip().lower()
     ignore_simplified_subtitle = override_bool(
         overrides.get("ignore_simplified_subtitle"), IGNORE_SIMPLIFIED_SUBTITLE
@@ -4148,6 +4196,10 @@ def process_video(video_path):
                 "log_path": run_log_path,
             },
         )
+        if is_realtime_model(ASR_MODEL) and asr_mode == "offline":
+            log("WARN", "ASR 模型为实时但模式为离线", path=video_path, model=ASR_MODEL)
+        if not is_realtime_model(ASR_MODEL) and asr_mode == "realtime":
+            log("WARN", "ASR 模型为离线但模式为实时", path=video_path, model=ASR_MODEL)
         log(
             "INFO",
             "开始处理",
@@ -4737,21 +4789,35 @@ def process_video(video_path):
         log("ERROR", "处理失败", path=video_path, error=str(exc), stage=stage)
         if stage.startswith("asr_"):
             fail_path = asr_failed_path(name, out_dir)
-            try:
-                with open(fail_path, "w", encoding="utf-8") as f:
-                    json.dump(
-                        {
-                            "ts": int(time.time()),
-                            "stage": stage,
-                            "error": str(exc),
-                        },
-                        f,
-                        ensure_ascii=False,
-                        indent=2,
-                    )
-                log("WARN", "标记 ASR 失败冷却", path=video_path, marker=fail_path)
-            except Exception:  # noqa: BLE001
-                pass
+            state = load_asr_fail_state(fail_path)
+            count = int(state.get("count", 0) or 0) + 1
+            fatal = ASR_MAX_FAILURES > 0 and count >= ASR_MAX_FAILURES
+            payload = {
+                "ts": int(time.time()),
+                "stage": stage,
+                "error": str(exc),
+                "count": count,
+                "fatal": fatal,
+            }
+            save_asr_fail_state(fail_path, payload)
+            if fatal:
+                log(
+                    "ERROR",
+                    "ASR 连续失败已达上限，暂停自动重试",
+                    path=video_path,
+                    count=count,
+                    limit=ASR_MAX_FAILURES,
+                )
+            else:
+                log(
+                    "WARN",
+                    "ASR 失败进入冷却",
+                    path=video_path,
+                    count=count,
+                    cooldown=ASR_FAIL_COOLDOWN_SECONDS,
+                )
+            if ASR_FAIL_ALERT:
+                log("ERROR", "ASR 失败强提示", path=video_path, error=str(exc))
         _write_run_meta(
             run_meta_path,
             {
