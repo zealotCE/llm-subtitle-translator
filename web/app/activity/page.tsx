@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AuthGuard } from "@/components/auth-guard";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -37,6 +37,7 @@ export default function ActivityPage() {
     processing: number;
   }>({ total: 0, type: {}, status: {}, processing: 0 });
   const { t } = useI18n();
+  const eventRef = useRef<EventSource | null>(null);
 
   const formatMessage = (item: ActivityItem) => {
     if (item.type === "media_added") return t("activity.msg.media_added");
@@ -105,10 +106,35 @@ export default function ActivityPage() {
   }, [type, status]);
 
   useEffect(() => {
-    const handle = window.setInterval(() => {
+    if (eventRef.current) {
+      eventRef.current.close();
+      eventRef.current = null;
+    }
+    const params = new URLSearchParams();
+    if (type) params.set("type", type);
+    if (status) params.set("status", status);
+    params.set("page", String(page));
+    params.set("page_size", String(pageSize));
+    const source = new EventSource(`/api/v3/activity/stream?${params.toString()}`);
+    source.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (!payload.ok) return;
+        setItems(payload.items || []);
+        setCounts(payload.counts || { total: 0, type: {}, status: {}, processing: 0 });
+        setTotal(payload.total || 0);
+      } catch {
+        // ignore
+      }
+    };
+    source.onerror = () => {
+      source.close();
       fetchActivity();
-    }, 2000);
-    return () => window.clearInterval(handle);
+    };
+    eventRef.current = source;
+    return () => {
+      source.close();
+    };
   }, [type, status, page, pageSize]);
 
   const typeCards = useMemo(
