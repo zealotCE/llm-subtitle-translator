@@ -1,12 +1,15 @@
 """Compatibility wrapper for the worker implementation."""
 
 if __name__ != "__main__":
-    try:
-        from .worker_impl import *  # type: ignore
-    except ImportError:
-        from worker_impl import *  # type: ignore
+    import importlib
+    import sys
 
-    __all__ = [name for name in globals() if not name.startswith("_")]
+    try:
+        _impl = importlib.import_module("watcher.worker_impl")
+    except ImportError:
+        _impl = importlib.import_module("worker_impl")
+
+    sys.modules[__name__] = _impl
 else:
     import runpy
 
