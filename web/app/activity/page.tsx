@@ -38,6 +38,8 @@ export default function ActivityPage() {
   }>({ total: 0, type: {}, status: {}, processing: 0 });
   const { t } = useI18n();
   const eventRef = useRef<EventSource | null>(null);
+  const [connected, setConnected] = useState(true);
+  const [streamKey, setStreamKey] = useState(0);
 
   const formatMessage = (item: ActivityItem) => {
     if (item.type === "media_added") return t("activity.msg.media_added");
@@ -74,35 +76,10 @@ export default function ActivityPage() {
     return value;
   };
 
-  const fetchActivity = async () => {
-    const params = new URLSearchParams();
-    if (type) params.set("type", type);
-    if (status) params.set("status", status);
-    params.set("page", String(page));
-    params.set("page_size", String(pageSize));
-    const res = await fetch(`/api/v3/activity?${params.toString()}`);
-    const data = await res.json();
-    if (data.ok) {
-      setItems(data.items || []);
-      setTotal(data.total || 0);
-      setCounts(data.counts || { total: 0, type: {}, status: {}, processing: 0 });
-    }
-  };
-
-  useEffect(() => {
-    fetchActivity();
-  }, []);
-
-  useEffect(() => {
-    fetchActivity();
-  }, [page, pageSize]);
-
   useEffect(() => {
     if (page !== 1) {
       setPage(1);
-      return;
     }
-    fetchActivity();
   }, [type, status]);
 
   useEffect(() => {
@@ -116,6 +93,9 @@ export default function ActivityPage() {
     params.set("page", String(page));
     params.set("page_size", String(pageSize));
     const source = new EventSource(`/api/v3/activity/stream?${params.toString()}`);
+    source.onopen = () => {
+      setConnected(true);
+    };
     source.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
@@ -123,19 +103,19 @@ export default function ActivityPage() {
         setItems(payload.items || []);
         setCounts(payload.counts || { total: 0, type: {}, status: {}, processing: 0 });
         setTotal(payload.total || 0);
+        setConnected(true);
       } catch {
         // ignore
       }
     };
     source.onerror = () => {
-      source.close();
-      fetchActivity();
+      setConnected(false);
     };
     eventRef.current = source;
     return () => {
       source.close();
     };
-  }, [type, status, page, pageSize]);
+  }, [type, status, page, pageSize, streamKey]);
 
   const typeCards = useMemo(
     () => [
@@ -171,6 +151,11 @@ export default function ActivityPage() {
       <AuthGuard />
       <section className="mx-auto max-w-5xl space-y-6">
         <h1 className="section-title">{t("activity.title")}</h1>
+        {!connected ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {t("activity.streamDisconnected")}
+          </div>
+        ) : null}
         <div className="grid gap-3 md:grid-cols-4">
           {typeCards.map((card) => (
             <button
@@ -223,7 +208,7 @@ export default function ActivityPage() {
           </Select>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={fetchActivity}>{t("common.search")}</Button>
+          <Button onClick={() => setStreamKey((prev) => prev + 1)}>{t("activity.reconnect")}</Button>
         </div>
         <div className="space-y-3">
           {items.length ? (
