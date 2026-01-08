@@ -76,7 +76,11 @@ export default function LogsPage() {
               </p>
             ))
           ) : (
-            <p>{t("logs.empty")}</p>
+            <div className="space-y-2">
+              <p>{t("logs.empty")}</p>
+              <p className="text-xs text-neutral-500">{t("logs.emptyHint")}</p>
+              <p className="text-xs text-neutral-500">{t("logs.emptyHint2")}</p>
+            </div>
           )}
         </div>
       </section>

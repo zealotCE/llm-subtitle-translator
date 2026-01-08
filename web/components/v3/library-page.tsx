@@ -162,7 +162,7 @@ export default function LibraryPage() {
     setPage(1);
   };
 
-  const toggleSort = (field: "title" | "status") => {
+  const toggleSort = (field: "title" | "status" | "updated") => {
     setSort((prev) => {
       const asc = `${field}_asc`;
       const desc = `${field}_desc`;
@@ -172,7 +172,7 @@ export default function LibraryPage() {
     });
   };
 
-  const sortMark = (field: "title" | "status") => {
+  const sortMark = (field: "title" | "status" | "updated") => {
     if (sort === `${field}_asc`) return "↑";
     if (sort === `${field}_desc`) return "↓";
     return "";
@@ -237,6 +237,11 @@ export default function LibraryPage() {
     }
     pushToast(t("toast.scanTriggered"), "success");
     fetchMedia();
+  };
+
+  const formatTime = (value: number) => {
+    if (!value) return "-";
+    return new Date(value * 1000).toLocaleString();
   };
   const csv = useMemo(() => {
     const header = ["id", "title", "path", "status", "has_raw", "has_zh", "has_bi"];
@@ -379,6 +384,16 @@ export default function LibraryPage() {
                   <span className="text-xs text-neutral-400">{sortMark("status")}</span>
                 </button>
               </TableHead>
+              <TableHead>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2"
+                  onClick={() => toggleSort("updated")}
+                >
+                  {t("library.table.updated")}
+                  <span className="text-xs text-neutral-400">{sortMark("updated")}</span>
+                </button>
+              </TableHead>
               <TableHead>{t("library.table.subtitles")}</TableHead>
               <TableHead>{t("library.table.actions")}</TableHead>
             </TableRow>
@@ -409,6 +424,7 @@ export default function LibraryPage() {
                       {t(`status.${item.status}`) || item.status}
                     </span>
                   </TableCell>
+                  <TableCell className="text-xs text-neutral-500">{formatTime(item.updated_at)}</TableCell>
                   <TableCell className="text-xs">
                     <span
                       className="inline-block max-w-[160px] truncate text-neutral-700"
@@ -442,7 +458,7 @@ export default function LibraryPage() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={5}>{t("library.empty")}</TableCell>
+                <TableCell colSpan={6}>{t("library.empty")}</TableCell>
               </TableRow>
             )}
           </TableBody>
