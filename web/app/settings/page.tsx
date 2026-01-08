@@ -25,6 +25,7 @@ type Field = {
   wide?: boolean;
   options?: Array<string | { labelKey: string; options: string[] }>;
   allowCustom?: boolean;
+  advancedOnly?: boolean;
 };
 
 type Group = {
@@ -102,6 +103,22 @@ const GROUPS: Group[] = [
         helpKey: "settings.help.languageHints",
         wide: true,
         type: "text",
+      },
+      {
+        key: "ASR_REALTIME_MODELS",
+        labelKey: "settings.label.asrRealtimeModels",
+        helpKey: "settings.help.asrRealtimeModels",
+        wide: true,
+        type: "text",
+        advancedOnly: true,
+      },
+      {
+        key: "ASR_OFFLINE_MODELS",
+        labelKey: "settings.label.asrOfflineModels",
+        helpKey: "settings.help.asrOfflineModels",
+        wide: true,
+        type: "text",
+        advancedOnly: true,
       },
     ],
   },
@@ -380,6 +397,9 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
               {group.fields.map((field) => {
+                if (field.advancedOnly && !advanced) {
+                  return null;
+                }
                 const value = values[field.key] || "";
                 const isSwitch = field.type === "switch";
                 const isSelect = field.type === "select";
