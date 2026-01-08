@@ -96,6 +96,8 @@ Docker 运行（示例）：
 docker compose up -d web
 ```
 
+Web 实时活动流使用 Redis（SSE 推送），默认已在 `docker-compose.yml` 中启用。
+
 Web 读取根目录 `.env`，并会访问 `WATCH_DIRS/OUT_DIR/LOG_DIR` 指向的目录，请确保 compose 中已挂载对应卷。
 如启用 `WEB_AUTH_ENABLED=true`，先访问 `http://localhost:3000/login` 登录。
 

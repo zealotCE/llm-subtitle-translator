@@ -171,6 +171,10 @@ Web UI 会扫描目录并同步：
 
 运行失败上限会触发 Activity `asr_failed_fatal`。
 
+### 8.1 活动流（Redis 可选）
+
+启用 `REDIS_URL` 后，watcher 会在更新 run.json 时发布进度事件，Web 通过 SSE 实时刷新活动与进度。
+
 ## 9. 排障建议
 
 - ASR 失败：先看 `run.log` 与 `worker.log`

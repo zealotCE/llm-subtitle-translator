@@ -56,6 +56,11 @@ LLM_TITLE_ALIAS_ENABLED=false
 - 单次运行日志：`<name>.<hash>.run.<run_id>.log`
 - 运行记录：`<name>.<hash>.run.json`（包含阶段/状态/日志路径）
 
+## 活动页进度为什么不更新？
+
+- 检查 Redis 是否启用：`REDIS_URL` 是否配置且服务可用
+- Web 需要能连接 Redis，容器内默认 `redis:6379`
+
 ## 媒体库扫描很慢怎么办？
 
 - Web 侧支持扫描缓存（`WEB_MEDIA_SCAN_CACHE_TTL`），在短时间内复用扫描结果

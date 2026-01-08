@@ -18,6 +18,7 @@
      | (inotify + 定时扫描)
      v
 [watcher/worker.py]
+     |-- Redis 发布进度/事件（可选）
      |-- 独立运行日志（每次 run 单独文件）
      |-- 媒体探测 (ffprobe)
      |-- 音轨选择
@@ -34,6 +35,7 @@
 - DashScope Paraformer：录音文件识别
 - LLM：翻译与术语推断
 - TMDb/Bangumi/WMDB：作品元数据（可选）
+- Redis：活动流与进度推送（可选）
 
 ## 运行与目录结构
 
@@ -135,6 +137,10 @@ Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 - `runs_total` / `runs_done` / `runs_failed`
 - `last_status` / `last_finished_at` / `last_duration_ms`
 - `updated_at`
+
+### 7.3 可选活动流（Redis）
+
+启用 `REDIS_URL` 后，watcher 会发布进度事件到 `REDIS_CHANNEL`，Web 通过 SSE 订阅实时更新活动与进度。
 
 ### 8. ASR 失败保护与告警
 
