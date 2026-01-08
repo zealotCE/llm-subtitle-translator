@@ -61,6 +61,16 @@ LLM_TITLE_ALIAS_ENABLED=false
 - Web 侧支持扫描缓存（`WEB_MEDIA_SCAN_CACHE_TTL`），在短时间内复用扫描结果
 - 如果需要每次都全量扫描，把 `WEB_MEDIA_SCAN_CACHE_TTL=0`
 
+## 实时 ASR 计费异常或失败频繁怎么办？
+
+- **检查模型类型**：`ASR_MODE=auto` 会按模型列表判断类型  
+  - 实时模型：`ASR_REALTIME_MODELS`
+  - 离线模型：`ASR_OFFLINE_MODELS`
+- **失败冷却与上限**：
+  - `ASR_FAIL_COOLDOWN_SECONDS`：失败后冷却，避免反复重试
+  - `ASR_MAX_FAILURES`：连续失败上限，达到后自动暂停
+- **强提示日志**：`ASR_FAIL_ALERT=true` 时会输出高优先级日志，Web Activity 会出现 `asr_failed_fatal`
+
 ## 如何保存/切换配置版本？
 
 - 设置页「配置版本」可以保存当前配置为命名版本

@@ -75,7 +75,11 @@ Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 
 ### 4. ASR 与二次切片
 
-- 抽取单一音轨 → 上传 OSS → Paraformer 异步识别
+- ASR 模式由 `ASR_MODE` 控制：`offline|realtime|auto`
+  - `auto` 会根据 `ASR_REALTIME_MODELS` / `ASR_OFFLINE_MODELS` 判断当前模型的类型
+  - 若未配置模型列表，则使用内置规则推断（模型名含 realtime 视为实时）
+- 离线路径：抽取单一音轨 → 上传 OSS → Paraformer 异步识别
+- 实时路径：抽取音轨 → 分片/流式 → 实时识别（失败率过高时缩短分片 + VAD 重试）
 - 识别结果经“智能二次切片”：
   - 限制单行时长/字符数
   - 优先按标点切分
@@ -106,6 +110,16 @@ Docker 运行：`docker-compose.yml` 启动 `watcher` 服务。
 - 运行记录：`name.<hash>.run.json`
 - 单次运行日志：`name.<hash>.run.<run_id>.log`
 - 全局日志支持轮转（`LOG_MAX_BYTES` / `LOG_MAX_BACKUPS`）
+
+### 8. ASR 失败保护与告警
+
+- 失败冷却：`ASR_FAIL_COOLDOWN_SECONDS`
+  - ASR 失败会写入 `name.asr_failed`，冷却期内自动跳过
+- 失败上限：`ASR_MAX_FAILURES`
+  - 达到上限会标记 `fatal`，自动扫描将跳过，避免计费暴涨
+- 强提示：`ASR_FAIL_ALERT`
+  - 失败时输出高优先级日志，Web Activity 会显示 `asr_failed_fatal`
+  - `run.json` 中会写入 `asr_fail_count / asr_fail_fatal / asr_fail_limit`
 
 ## 关键设计决策
 

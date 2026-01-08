@@ -208,7 +208,7 @@ docker exec <container> sh -c 'touch /watch/.scan_now'
 - `ASR_REALTIME_FALLBACK_MAX_SENTENCE_SILENCE`：VAD 静音阈值（默认 `1200`）
 - `ASR_REALTIME_FALLBACK_MULTI_THRESHOLD`：VAD 多阈值防止过长（默认 `true`）
 - `ASR_FAIL_COOLDOWN_SECONDS`：ASR 失败冷却时间（秒，默认 `3600`）
-- `ASR_MAX_FAILURES`：连续失败上限（默认 `3`）
+- `ASR_MAX_FAILURES`：连续失败上限（默认 `3`，达到后暂停自动重试）
 - `ASR_FAIL_ALERT`：ASR 失败强提示日志（默认 `true`）
 - `ASR_SEMANTIC_PUNCTUATION_ENABLED`：实时 ASR 语义断句（默认 `false`）
 - `ASR_MAX_SENTENCE_SILENCE`：实时 ASR VAD 静音阈值 ms（默认 `800`）
