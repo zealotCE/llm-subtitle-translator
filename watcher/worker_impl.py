@@ -3047,6 +3047,36 @@ def segments_to_srt(segments):
     return "\n".join(lines).strip() + "\n"
 
 
+def dedupe_segments(segments):
+    if not segments:
+        return segments
+    seen = set()
+    output = []
+    for seg in segments:
+        key = (seg.get("start_ms"), seg.get("end_ms"), seg.get("text"))
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(seg)
+    return output
+
+
+def dedupe_subtitles(subs):
+    if not subs:
+        return subs
+    seen = set()
+    output = []
+    for sub in subs:
+        key = (sub.start, sub.end, sub.content)
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(sub)
+    for idx, sub in enumerate(output, start=1):
+        sub.index = idx
+    return output
+
+
 def post_process_asr_result(
     asr_result,
     max_duration_seconds=3.5,
@@ -3065,6 +3095,7 @@ def post_process_asr_result(
         max_chars,
         merge_gap_ms,
     )
+    segments = dedupe_segments(segments)
     return assign_indices(segments)
 
 
@@ -3741,6 +3772,7 @@ def build_srt(response, segment_mode="post"):
     if not subs:
         raise RuntimeError("未找到带时间戳的识别结果")
 
+    subs = dedupe_subtitles(subs)
     return subs, srt.compose(subs)
 
 

@@ -210,6 +210,23 @@ export default function ActivityPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={() => setStreamKey((prev) => prev + 1)}>{t("activity.reconnect")}</Button>
         </div>
+        <div className="rounded-2xl border border-neutral-200 bg-white/70 px-4 py-3 text-sm">
+          <div className="font-medium text-neutral-900">{t("activity.pipeline.title")}</div>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-neutral-600">
+            <li>{t("activity.pipeline.step.extract")}</li>
+            <li>{t("activity.pipeline.step.upload")}</li>
+            <li>{t("activity.pipeline.step.asr")}</li>
+            <li>{t("activity.pipeline.step.segment")}</li>
+            <li>{t("activity.pipeline.step.translate")}</li>
+            <li>{t("activity.pipeline.step.srt")}</li>
+          </ul>
+          <div className="mt-3 font-medium text-neutral-900">{t("activity.pipeline.skipTitle")}</div>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-neutral-600">
+            <li>{t("activity.pipeline.skip.processed")}</li>
+            <li>{t("activity.pipeline.skip.existingSubtitle")}</li>
+            <li>{t("activity.pipeline.skip.simplified")}</li>
+          </ul>
+        </div>
         <div className="space-y-3">
           {items.length ? (
             items.map((item) => (

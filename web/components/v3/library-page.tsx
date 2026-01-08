@@ -98,6 +98,7 @@ export default function LibraryPage() {
   const suspendOrderUntilRef = useRef(0);
 
   const filters = [
+    { key: "pending", label: t("library.filter.pending") },
     { key: "missing_zh", label: t("library.filter.missingZh") },
     { key: "failed", label: t("library.filter.failed") },
     { key: "running", label: t("library.filter.running") },
