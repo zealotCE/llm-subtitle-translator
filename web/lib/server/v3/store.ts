@@ -82,6 +82,24 @@ export async function scanAndSync(env: Record<string, string>) {
         existing.status === "running" && (status === "done" || status === "failed");
       const prevOutputs = existing.outputs || { other: [] };
       const stageEvents: ActivityItem[] = [];
+      const asrFailFatal = Boolean(runMeta && (runMeta as Record<string, unknown>).asr_fail_fatal);
+      if (asrFailFatal) {
+        const runId = typeof runMeta?.run_id === "string" ? runMeta.run_id : `${id}-${now}`;
+        const actId = `${id}-asr-fatal-${runId}`;
+        if (!hasActivity(state, actId)) {
+          const count = (runMeta as Record<string, unknown>)?.asr_fail_count;
+          const limit = (runMeta as Record<string, unknown>)?.asr_fail_limit;
+          state.activity.unshift({
+            id: actId,
+            media_id: id,
+            run_id: existing.last_run_id,
+            type: "asr_failed_fatal",
+            status: "failed",
+            message: `ASR 连续失败已达上限（${count ?? "-"} / ${limit ?? "-"}）`,
+            created_at: now,
+          });
+        }
+      }
       if ((!prevOutputs.raw && outputs.raw) || (finishedRun && outputs.raw)) {
         stageEvents.push({
           id: `${id}-stage-asr-${now}`,
@@ -139,6 +157,10 @@ export async function scanAndSync(env: Record<string, string>) {
   pruneStaleEntries(state, mediaDirs, seenIds);
   await saveState(state);
   return state;
+}
+
+function hasActivity(state: StoreState, id: string) {
+  return state.activity.some((item) => item.id === id);
 }
 
 export function listMedia(

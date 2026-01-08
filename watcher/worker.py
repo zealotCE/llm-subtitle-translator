@@ -94,6 +94,8 @@ ASR_HEARTBEAT = os.getenv("ASR_HEARTBEAT", "false").lower() == "true"
 
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 ASR_MODEL = os.getenv("ASR_MODEL", "paraformer-v2")
+ASR_REALTIME_MODELS = os.getenv("ASR_REALTIME_MODELS", "").strip()
+ASR_OFFLINE_MODELS = os.getenv("ASR_OFFLINE_MODELS", "").strip()
 LANGUAGE_HINTS = [h.strip() for h in os.getenv("LANGUAGE_HINTS", "ja,en").split(",") if h.strip()]
 
 OSS_ENDPOINT = os.getenv("OSS_ENDPOINT", "")
@@ -449,6 +451,21 @@ def parse_langs():
         if lang not in seen:
             seen.append(lang)
     return seen
+
+
+def parse_csv(value):
+    if not value:
+        return []
+    items = []
+    for raw in value.split(","):
+        raw = _strip_quotes(raw.strip())
+        if raw:
+            items.append(raw)
+    return items
+
+
+def normalize_model_list(value):
+    return [item.strip().lower() for item in parse_csv(value)]
 
 
 def _strip_quotes(value):
@@ -866,18 +883,23 @@ def is_realtime_model(model_name):
     if not model_name:
         return False
     name = model_name.strip().lower()
-    realtime_models = {
-        "fun-asr-realtime-2025-11-07",
-        "paraformer-realtime-8k-v2",
-        "paraformer-realtime-v2",
-        "fun-asr-realtime",
-        "paraformer-realtime",
-    }
-    return name in realtime_models or name.startswith("fun-asr-realtime")
+    realtime_models = normalize_model_list(ASR_REALTIME_MODELS)
+    if realtime_models:
+        return name in realtime_models
+    return name.startswith("fun-asr-realtime") or "realtime" in name
 
 
 def resolve_asr_mode(mode, model_name):
     if mode == "auto":
+        name = (model_name or "").strip().lower()
+        realtime_models = normalize_model_list(ASR_REALTIME_MODELS)
+        offline_models = normalize_model_list(ASR_OFFLINE_MODELS)
+        if realtime_models and name in realtime_models:
+            return "realtime"
+        if offline_models and name in offline_models:
+            return "offline"
+        if realtime_models or offline_models:
+            return "offline"
         return "realtime" if is_realtime_model(model_name) else "offline"
     return mode
 
@@ -4196,6 +4218,11 @@ def process_video(video_path):
                 "log_path": run_log_path,
             },
         )
+        if ASR_MODE == "auto" and not (
+            normalize_model_list(ASR_REALTIME_MODELS)
+            or normalize_model_list(ASR_OFFLINE_MODELS)
+        ):
+            log("WARN", "ASR_MODE=auto 但未配置模型列表，将使用默认推断", path=video_path)
         if is_realtime_model(ASR_MODEL) and asr_mode == "offline":
             log("WARN", "ASR 模型为实时但模式为离线", path=video_path, model=ASR_MODEL)
         if not is_realtime_model(ASR_MODEL) and asr_mode == "realtime":
@@ -4787,6 +4814,8 @@ def process_video(video_path):
                 log("WARN", "删除源视频失败", path=video_path, error=str(exc))
     except Exception as exc:  # noqa: BLE001
         log("ERROR", "处理失败", path=video_path, error=str(exc), stage=stage)
+        count = 0
+        fatal = False
         if stage.startswith("asr_"):
             fail_path = asr_failed_path(name, out_dir)
             state = load_asr_fail_state(fail_path)
@@ -4826,6 +4855,10 @@ def process_video(video_path):
                 "status": "failed",
                 "stage": stage,
                 "error": str(exc),
+                "asr_fail_count": count if stage.startswith("asr_") else None,
+                "asr_fail_fatal": fatal if stage.startswith("asr_") else None,
+                "asr_fail_limit": ASR_MAX_FAILURES if stage.startswith("asr_") else None,
+                "asr_fail_cooldown": ASR_FAIL_COOLDOWN_SECONDS if stage.startswith("asr_") else None,
                 "started_at": run_started_at,
                 "finished_at": int(time.time()),
                 "log_path": run_log_path,
