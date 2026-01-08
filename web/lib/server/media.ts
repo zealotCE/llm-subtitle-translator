@@ -113,6 +113,33 @@ export function runMetaPathFor(videoPath: string, outDir: string) {
   return path.join(outDir, `${base}.${token}.run.json`);
 }
 
+export function archivedMarkerPath(env: Record<string, string>, videoPath: string) {
+  const outDir = getOutputDir(env, videoPath);
+  if (!outDir) return "";
+  const base = path.basename(videoPath, path.extname(videoPath));
+  const suffix = (env.OUTPUT_LANG_SUFFIX || "").trim();
+  return path.join(outDir, `${base}${suffix}.archived`);
+}
+
+export async function setArchivedMarker(
+  env: Record<string, string>,
+  videoPath: string,
+  archived: boolean
+) {
+  const marker = archivedMarkerPath(env, videoPath);
+  if (!marker) return;
+  try {
+    if (archived) {
+      await fs.mkdir(path.dirname(marker), { recursive: true });
+      await fs.writeFile(marker, "archived", "utf-8");
+    } else {
+      await fs.rm(marker, { force: true });
+    }
+  } catch {
+    // ignore marker failures
+  }
+}
+
 async function findExternalSubtitles(env: Record<string, string>, videoPath: string) {
   const base = path.basename(videoPath, path.extname(videoPath)).toLowerCase();
   const dirs = new Set<string>();

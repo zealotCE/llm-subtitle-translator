@@ -1,5 +1,6 @@
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
+import { setArchivedMarker } from "@/lib/server/media";
 import { getMedia, loadState, saveState } from "@/lib/server/v3/store";
 
 export const runtime = "nodejs";
@@ -19,6 +20,7 @@ export async function POST(request: Request, context: { params: { id: string } }
   media.status = "pending";
   media.updated_at = Math.floor(Date.now() / 1000);
   state.media[media.id] = media;
+  await setArchivedMarker(env, media.path, false);
   await saveState(state);
   return Response.json({ ok: true, media });
 }

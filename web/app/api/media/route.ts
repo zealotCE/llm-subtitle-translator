@@ -1,6 +1,11 @@
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
-import { getMediaDirs, getSimplifiedSubtitlePaths, scanVideosCached } from "@/lib/server/media";
+import {
+  getMediaDirs,
+  getSimplifiedSubtitlePaths,
+  scanVideosCached,
+  setArchivedMarker,
+} from "@/lib/server/media";
 import { loadMediaState, saveMediaState } from "@/lib/server/storage";
 import fs from "fs/promises";
 import path from "path";
@@ -53,12 +58,15 @@ export async function POST(request: Request) {
       await fs.rename(pathValue, dest);
       delete state[pathValue];
       state[dest] = { archived: true };
+      await setArchivedMarker(env, dest, true);
     } else {
       state[pathValue] = { ...state[pathValue], archived: true };
+      await setArchivedMarker(env, pathValue, true);
     }
   }
   if (action === "unarchive" && pathValue) {
     state[pathValue] = { ...state[pathValue], archived: false };
+    await setArchivedMarker(env, pathValue, false);
   }
   if (action === "delete" && pathValue && env.WEB_ALLOW_DELETE === "true") {
     await fs.rm(pathValue, { force: true });

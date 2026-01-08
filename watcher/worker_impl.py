@@ -946,6 +946,11 @@ def output_paths(name, out_dir):
     return srt_path, done_path, lock_path, raw_path
 
 
+def archived_marker_path(name, out_dir):
+    suffix_name = f"{name}{OUTPUT_LANG_SUFFIX}"
+    return os.path.join(out_dir, f"{suffix_name}.archived")
+
+
 def asr_failed_path(name, out_dir):
     return os.path.join(out_dir, f"{name}.asr_failed")
 
@@ -4276,7 +4281,10 @@ def should_skip(video_path, force_once=False):
     out_dir = output_dir_for(video_path)
     srt_path, done_path, lock_path, _ = output_paths(name, out_dir)
     fail_path = asr_failed_path(name, out_dir)
+    archived_path = archived_marker_path(name, out_dir)
 
+    if not force_once and os.path.exists(archived_path):
+        return True, "archived"
     if not force_once and os.path.exists(done_path):
         return True, "done_exists"
     if not force_once and os.path.exists(srt_path) and not OUTPUT_TO_SOURCE_DIR:
