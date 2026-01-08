@@ -21,3 +21,10 @@ def test_guess_variant_from_text_traditional():
 def test_guess_variant_from_text_unknown_with_kana():
     text = "こんにちは世界"
     assert worker._guess_variant_from_text(text) == "unknown"
+
+
+def test_describe_subtitle_variant_label_simplified_but_japanese(tmp_path):
+    path = tmp_path / "movie.zh.srt"
+    path.write_text("こんにちは世界", encoding="utf-8")
+    info = {"kind": "external", "name": "movie.zh.srt", "path": str(path)}
+    assert worker.describe_subtitle_variant(info) == "unknown"

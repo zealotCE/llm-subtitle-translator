@@ -3239,6 +3239,14 @@ def _guess_variant_from_text(text):
     return "unknown"
 
 
+def _is_simplified_text(text):
+    if not text:
+        return False
+    if _is_japanese_text(text):
+        return False
+    return _guess_variant_from_text(text) == "simplified"
+
+
 def _guess_variant_from_label(text):
     if not text:
         return None
@@ -3326,7 +3334,10 @@ def describe_subtitle_variant(subtitle_info, video_path=None):
     if subtitle_info.get("kind") == "external":
         name = subtitle_info.get("name", "")
         variant = _guess_variant_from_label(name)
-        if variant in ("simplified", "traditional"):
+        if variant == "simplified":
+            text = _sample_subtitle_text(subtitle_info.get("path"))
+            return "simplified" if _is_simplified_text(text) else "unknown"
+        if variant == "traditional":
             return variant
         text = _sample_subtitle_text(subtitle_info.get("path"))
         variant = _guess_variant_from_text(text)
@@ -3336,6 +3347,20 @@ def describe_subtitle_variant(subtitle_info, video_path=None):
     title = subtitle_info.get("title") or ""
     variant = _guess_variant_from_label(f"{lang} {title}")
     if variant in ("simplified", "traditional"):
+        if variant == "simplified" and video_path and not subtitle_info.get("is_image_based"):
+            tmp_path = os.path.join(TMP_DIR, f"probe-{uuid.uuid4().hex}.srt")
+            try:
+                ffmpeg_extract_subtitle(video_path, subtitle_info["stream_index"], tmp_path)
+                text = _sample_subtitle_text(tmp_path)
+                return "simplified" if _is_simplified_text(text) else "unknown"
+            except Exception:  # noqa: BLE001
+                return "unknown"
+            finally:
+                try:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                except OSError:
+                    pass
         return variant
     if video_path and variant in ("chinese", None):
         tmp_path = os.path.join(TMP_DIR, f"probe-{uuid.uuid4().hex}.srt")
