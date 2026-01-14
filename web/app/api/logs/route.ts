@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import { getAuthFromRequest } from "@/lib/server/auth";
 import { loadEnv, resolvePath } from "@/lib/server/env";
+import { parseLogLine } from "@/lib/logs";
 
 const CONFIG_PATH = process.env.WEB_CONFIG_PATH || ".env";
 
@@ -17,17 +18,21 @@ export async function GET(request: Request) {
   const logDir = env.LOG_DIR || "/output/logs";
   const logName = env.LOG_FILE_NAME || "worker.log";
   if (!logDir) {
-    return Response.json({ logs: [] });
+    return Response.json({ ok: true, logs: [] });
   }
   const logPath = resolvePath(`${logDir}/${logName}`);
   try {
     const content = await fs.readFile(logPath, "utf-8");
-    const lines = content
+    const entries = content
       .split(/\r?\n/)
-      .filter((line) => line && (keyword ? line.includes(keyword) : true));
-    const sliced = limit > 0 ? lines.slice(-limit) : lines;
-    return Response.json({ logs: sliced });
+      .filter((line) => line)
+      .map((line) => parseLogLine(line))
+      .filter((entry) =>
+        keyword ? entry.raw.includes(keyword) || entry.message.includes(keyword) : true
+      );
+    const sliced = limit > 0 ? entries.slice(-limit) : entries;
+    return Response.json({ ok: true, logs: sliced });
   } catch {
-    return Response.json({ logs: [] });
+    return Response.json({ ok: true, logs: [] });
   }
 }
