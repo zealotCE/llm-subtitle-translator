@@ -164,7 +164,7 @@
 
 Web UI 会扫描目录并同步：
 
-- Media item（文件）
+- Media items（文件）
 - Outputs（字幕产物）
 - Runs（运行记录）
 - Activity（活动/事件）
@@ -177,7 +177,7 @@ Web UI 会扫描目录并同步：
 
 ## 9. 排障建议
 
-- ASR 失败：先看 `run.log` 与 `worker.log`
+- ASR 失败：先看 `name.<hash>.run.<run_id>.log` 与 `worker.log`
 - 重复计费：检查 `ASR_MAX_FAILURES` 与冷却时间
 - 运行一直 running：检查 `run.json` 和是否有 `.lock` 过期
 - 字幕复用失败：检查 `SUBTITLE_MODE` 与置信度阈值

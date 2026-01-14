@@ -119,7 +119,7 @@ def _format_env_value(value):
         return ""
     if value == "":
         return '""'
-    if re.search(r"[\\s#]", value):
+    if re.search(r"[\s#]", value):
         escaped = value.replace("\\", "\\\\").replace('"', '\\"')
         return f'"{escaped}"'
     return value
