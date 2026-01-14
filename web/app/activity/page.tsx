@@ -76,7 +76,37 @@ export default function ActivityPage() {
     if (value.startsWith("translate")) return t("activity.stage.translate");
     if (value === "probe") return t("activity.stage.probe");
     if (value === "subtitle_select") return t("activity.stage.subtitle");
+    if (value === "segment") return t("activity.stage.segment");
+    if (value === "srt") return t("activity.stage.srt");
     return value;
+  };
+
+  const flowSteps = [
+    { key: "probe", label: t("activity.stage.probe") },
+    { key: "subtitle_select", label: t("activity.stage.subtitle") },
+    { key: "asr", label: t("activity.stage.asr") },
+    { key: "segment", label: t("activity.stage.segment") },
+    { key: "translate", label: t("activity.stage.translate") },
+    { key: "srt", label: t("activity.stage.srt") },
+    { key: "done", label: t("activity.stage.done") },
+  ];
+
+  const stageKey = (value?: string) => {
+    if (!value) return "";
+    if (value.startsWith("asr")) return "asr";
+    if (value.startsWith("translate")) return "translate";
+    if (value === "subtitle_select") return "subtitle_select";
+    if (value === "probe") return "probe";
+    if (value === "segment") return "segment";
+    if (value === "srt") return "srt";
+    return value;
+  };
+
+  const flowIndex = (item: ActivityItem) => {
+    if (item.status === "done") return flowSteps.findIndex((step) => step.key === "done");
+    const key = stageKey(item.stage);
+    const index = flowSteps.findIndex((step) => step.key === key);
+    return index === -1 ? 0 : index;
   };
 
   useEffect(() => {
@@ -152,8 +182,11 @@ export default function ActivityPage() {
   return (
     <main className="min-h-screen px-6 py-10">
       <AuthGuard />
-      <section className="mx-auto max-w-5xl space-y-6">
-        <h1 className="section-title">{t("activity.title")}</h1>
+      <section className="mx-auto max-w-6xl space-y-6">
+        <div className="space-y-2">
+          <h1 className="section-title">{t("activity.title")}</h1>
+          <p className="text-sm text-neutral-500">{t("activity.subtitle")}</p>
+        </div>
         {!connected ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             {t("activity.streamDisconnected")}
@@ -174,44 +207,49 @@ export default function ActivityPage() {
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap gap-2">
-          {statusChips.map((chip) => (
-            <Button
-              key={chip.key || "all"}
-              variant={status === chip.key ? "default" : "outline"}
-              size="sm"
-              onClick={() => setStatus(chip.key)}
-            >
-              {chip.label} · {chip.count}
+        <div className="rounded-2xl border border-neutral-200 bg-white/70 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm font-semibold text-neutral-900">{t("activity.filter.title")}</div>
+            <Button size="sm" variant="outline" onClick={() => setStreamKey((prev) => prev + 1)}>
+              {t("activity.reconnect")}
             </Button>
-          ))}
-        </div>
-        <div className="grid gap-3 md:grid-cols-3">
-          <Select value={type} onChange={(event) => setType(event.target.value)}>
-            <option value="">{t("activity.filterAll")}</option>
-            <option value="media_added">{t("activity.type.media_added")}</option>
-            <option value="status_change">{t("activity.type.status_change")}</option>
-            <option value="retry">{t("activity.type.retry")}</option>
-            <option value="translate">{t("activity.type.translate")}</option>
-            <option value="force">{t("activity.type.force")}</option>
-            <option value="stage_asr_done">{t("activity.type.stage_asr")}</option>
-            <option value="stage_translate_done">{t("activity.type.stage_translate")}</option>
-          </Select>
-          <Select value={status} onChange={(event) => setStatus(event.target.value)}>
-            <option value="">{t("activity.filterAll")}</option>
-            <option value="processing">{t("activity.filter.processing")}</option>
-            <option value="failed">{t("status.failed")}</option>
-            <option value="done">{t("status.done")}</option>
-            <option value="info">{t("status.info")}</option>
-          </Select>
-          <Select value={String(pageSize)} onChange={(event) => setPageSize(Number(event.target.value))}>
-            <option value="20">20/页</option>
-            <option value="50">50/页</option>
-            <option value="100">100/页</option>
-          </Select>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => setStreamKey((prev) => prev + 1)}>{t("activity.reconnect")}</Button>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {statusChips.map((chip) => (
+              <Button
+                key={chip.key || "all"}
+                variant={status === chip.key ? "default" : "outline"}
+                size="sm"
+                onClick={() => setStatus(chip.key)}
+              >
+                {chip.label} · {chip.count}
+              </Button>
+            ))}
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <Select value={type} onChange={(event) => setType(event.target.value)}>
+              <option value="">{t("activity.filterAll")}</option>
+              <option value="media_added">{t("activity.type.media_added")}</option>
+              <option value="status_change">{t("activity.type.status_change")}</option>
+              <option value="retry">{t("activity.type.retry")}</option>
+              <option value="translate">{t("activity.type.translate")}</option>
+              <option value="force">{t("activity.type.force")}</option>
+              <option value="stage_asr_done">{t("activity.type.stage_asr")}</option>
+              <option value="stage_translate_done">{t("activity.type.stage_translate")}</option>
+            </Select>
+            <Select value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="">{t("activity.filterAll")}</option>
+              <option value="processing">{t("activity.filter.processing")}</option>
+              <option value="failed">{t("status.failed")}</option>
+              <option value="done">{t("status.done")}</option>
+              <option value="info">{t("status.info")}</option>
+            </Select>
+            <Select value={String(pageSize)} onChange={(event) => setPageSize(Number(event.target.value))}>
+              <option value="20">20/页</option>
+              <option value="50">50/页</option>
+              <option value="100">100/页</option>
+            </Select>
+          </div>
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-white/70 px-4 py-3 text-sm">
           <div className="font-medium text-neutral-900">{t("activity.pipeline.title")}</div>
@@ -230,22 +268,29 @@ export default function ActivityPage() {
             <li>{t("activity.pipeline.skip.simplified")}</li>
           </ul>
         </div>
-        <div className="space-y-3">
+        <div className="space-y-4">
           {items.length ? (
             items.map((item) => (
-              <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white/70 px-4 py-3 text-sm">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="font-medium text-neutral-900">{formatMessage(item)}</div>
-                    {item.media_title ? (
-                      <div className="text-xs text-neutral-500">{item.media_title}</div>
-                    ) : null}
-                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-500">
-                      <span>
-                        {t("activity.type")}: {t(`activity.type.${item.type}`) || item.type}
+              <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white/70 p-4 text-sm">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-neutral-900 px-3 py-1 text-xs font-semibold text-white">
+                        {t(`status.${item.status}`) || item.status}
                       </span>
+                      <span className="text-sm font-semibold text-neutral-900">{formatMessage(item)}</span>
+                      {formatStage(item.stage) ? (
+                        <span className="rounded-full border border-neutral-200 px-2 py-0.5 text-[11px] text-neutral-500">
+                          {formatStage(item.stage)}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-xs text-neutral-500">
+                      {t("activity.card.media")}: {item.media_title || item.media_path || "-"}
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs text-neutral-500">
                       <span>
-                        {t("activity.status")}: {t(`status.${item.status}`) || item.status}
+                        {t("activity.card.task")}: {t(`activity.type.${item.type}`) || item.type}
                       </span>
                       {item.asr_model ? (
                         <span>
@@ -257,20 +302,13 @@ export default function ActivityPage() {
                           {t("activity.model.llm")}: {item.llm_model}
                         </span>
                       ) : null}
-                      {formatStage(item.stage) ? (
-                        <span className="rounded-full border border-neutral-200 px-2 py-0.5 text-[11px] text-neutral-500">
-                          {formatStage(item.stage)}
-                        </span>
-                      ) : null}
-                      {formatProgress(item) ? <span>{formatProgress(item)}</span> : null}
-                      <span>{new Date(item.created_at * 1000).toLocaleString()}</span>
+                      <span>
+                        {t("activity.card.created")}: {new Date(item.created_at * 1000).toLocaleString()}
+                      </span>
                     </div>
-                    {progressValue(item) !== null ? (
-                      <div className="mt-2 h-2 w-full max-w-xs rounded-full bg-neutral-100">
-                        <div
-                          className="h-2 rounded-full bg-neutral-900 transition-all"
-                          style={{ width: `${progressValue(item)}%` }}
-                        />
+                    {formatProgress(item) ? (
+                      <div className="text-xs text-neutral-600">
+                        {t("activity.card.progress")}: {formatProgress(item)}
                       </div>
                     ) : null}
                   </div>
@@ -293,10 +331,44 @@ export default function ActivityPage() {
                     ) : null}
                   </div>
                 </div>
+                <div className="mt-4">
+                  <div className="text-xs font-semibold text-neutral-500">{t("activity.card.flow")}</div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {flowSteps.map((step, index) => {
+                      const active = index <= flowIndex(item);
+                      return (
+                        <div key={step.key} className="flex items-center gap-2">
+                          <span
+                            className={`rounded-full px-2 py-1 text-[11px] ${
+                              active ? "bg-neutral-900 text-white" : "bg-neutral-100 text-neutral-500"
+                            }`}
+                          >
+                            {step.label}
+                          </span>
+                          {index < flowSteps.length - 1 ? (
+                            <span className="h-px w-4 bg-neutral-200" />
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {progressValue(item) !== null ? (
+                    <div className="mt-3 h-2 w-full max-w-lg rounded-full bg-neutral-100">
+                      <div
+                        className="h-2 rounded-full bg-neutral-900 transition-all"
+                        style={{ width: `${progressValue(item)}%` }}
+                      />
+                    </div>
+                  ) : null}
+                  <div className="mt-2 text-xs text-neutral-400">{t("activity.card.tip")}</div>
+                </div>
               </div>
             ))
           ) : (
-            <p className="text-sm text-neutral-500">{t("activity.empty")}</p>
+            <div className="rounded-2xl border border-dashed border-neutral-200 bg-white/60 px-4 py-6 text-sm text-neutral-500">
+              <p>{t("activity.empty")}</p>
+              <p className="mt-2 text-xs text-neutral-400">{t("activity.emptyHint")}</p>
+            </div>
           )}
         </div>
         <div className="flex items-center gap-3 text-sm text-neutral-500">

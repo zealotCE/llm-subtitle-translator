@@ -5,6 +5,7 @@ import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n";
+import { detectLogSource } from "@/lib/logs";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default function LogsPage() {
   const [limit, setLimit] = useState("200");
   const [logs, setLogs] = useState<string[]>([]);
   const [message, setMessage] = useState("");
+  const [source, setSource] = useState<"all" | "web" | "worker" | "unknown">("all");
 
   const fetchLogs = async () => {
     setMessage("");
@@ -39,13 +41,51 @@ export default function LogsPage() {
     fetchLogs();
   }, []);
 
-  const csv = useMemo(() => logs.map((line) => `"${line.replace(/\"/g, '""')}"`).join("\n"), [logs]);
+  const filteredLogs = useMemo(() => {
+    if (source === "all") return logs;
+    return logs.filter((line) => detectLogSource(line) === source);
+  }, [logs, source]);
+
+  const sourceCounts = useMemo(() => {
+    return logs.reduce(
+      (acc, line) => {
+        acc[detectLogSource(line)] += 1;
+        return acc;
+      },
+      { web: 0, worker: 0, unknown: 0 }
+    );
+  }, [logs]);
+
+  const csv = useMemo(() => filteredLogs.map((line) => `"${line.replace(/\"/g, '""')}"`).join("\n"), [
+    filteredLogs,
+  ]);
 
   return (
     <main className="min-h-screen px-6 py-10">
       <AuthGuard />
       <section className="mx-auto max-w-5xl space-y-6">
         <h1 className="section-title">{t("logs.title")}</h1>
+        <div className="rounded-2xl border border-neutral-200 bg-white/70 px-4 py-3 text-sm text-neutral-600">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs uppercase tracking-[0.2em] text-neutral-400">{t("logs.source")}</span>
+            {([
+              { key: "all", label: t("logs.source.all"), count: logs.length },
+              { key: "web", label: t("logs.source.web"), count: sourceCounts.web },
+              { key: "worker", label: t("logs.source.worker"), count: sourceCounts.worker },
+              { key: "unknown", label: t("logs.source.unknown"), count: sourceCounts.unknown },
+            ] as const).map((item) => (
+              <Button
+                key={item.key}
+                size="sm"
+                variant={source === item.key ? "default" : "outline"}
+                onClick={() => setSource(item.key)}
+              >
+                {item.label} · {item.count}
+              </Button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-neutral-400">{t("logs.sourceHint")}</p>
+        </div>
         <div className="flex flex-wrap gap-3">
           <Input
             placeholder={t("logs.keyword")}
@@ -60,7 +100,7 @@ export default function LogsPage() {
             onChange={(e) => setLimit(e.target.value)}
           />
           <Button onClick={fetchLogs}>{t("common.search")}</Button>
-          <Button variant="ghost" onClick={() => downloadFile("logs.json", JSON.stringify(logs, null, 2))}>
+          <Button variant="ghost" onClick={() => downloadFile("logs.json", JSON.stringify(filteredLogs, null, 2))}>
             {t("logs.exportJson")}
           </Button>
           <Button variant="ghost" onClick={() => downloadFile("logs.csv", csv)}>
@@ -69,8 +109,8 @@ export default function LogsPage() {
         </div>
         {message ? <p className="text-sm text-rose-600">{message}</p> : null}
         <div className="glass-panel rounded-2xl p-4 text-sm text-neutral-600">
-          {logs.length ? (
-            logs.map((line, idx) => (
+          {filteredLogs.length ? (
+            filteredLogs.map((line, idx) => (
               <p key={idx} className="border-b border-border py-2 last:border-none">
                 {line}
               </p>
